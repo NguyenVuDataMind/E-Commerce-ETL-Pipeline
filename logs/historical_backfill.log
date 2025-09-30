@@ -1,0 +1,196 @@
+2025-08-27 10:29:06,948 - historical_backfill - INFO - ============================================================
+2025-08-27 10:29:06,951 - historical_backfill - INFO - ============================================================
+2025-08-27 10:29:06,959 - historical_backfill - INFO - 
+2025-08-27 10:32:00,498 - historical_backfill - INFO - ============================================================
+2025-08-27 10:32:00,500 - historical_backfill - INFO - STARTING COMPLETE HISTORICAL BACKFILL
+2025-08-27 10:32:00,501 - historical_backfill - INFO - ============================================================
+2025-08-27 10:32:00,503 - historical_backfill - INFO - Date range: 2024-07-01 to 2025-08-27
+2025-08-27 10:32:00,503 - historical_backfill - INFO - Batch size: 7 days
+2025-08-27 10:32:00,503 - historical_backfill - INFO - Total days to process: 422
+2025-08-27 10:32:00,504 - historical_backfill - INFO - 
+2025-08-27 10:32:00,504 - historical_backfill - INFO - Running pre-flight checks...
+2025-08-27 10:32:01,211 - historical_backfill - INFO -    Database connection: OK
+2025-08-27 10:32:01,899 - historical_backfill - WARNING -    TikTok Shop API: Connection issues
+2025-08-27 10:32:02,548 - historical_backfill - INFO - Pre-flight checks completed
+2025-08-27 10:32:02,549 - historical_backfill - INFO - 
+2025-08-27 10:32:02,555 - historical_backfill - INFO - 
+2025-08-27 10:32:02,561 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:04,575 - historical_backfill - INFO - 
+2025-08-27 10:32:04,580 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:06,594 - historical_backfill - INFO - 
+2025-08-27 10:32:06,598 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:08,607 - historical_backfill - INFO - 
+2025-08-27 10:32:08,607 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:10,621 - historical_backfill - INFO - 
+2025-08-27 10:32:10,626 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:12,650 - historical_backfill - INFO - 
+2025-08-27 10:32:12,656 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:14,676 - historical_backfill - INFO - 
+2025-08-27 10:32:14,677 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:16,701 - historical_backfill - INFO - 
+2025-08-27 10:32:16,707 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:18,731 - historical_backfill - INFO - 
+2025-08-27 10:32:18,732 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:20,748 - historical_backfill - INFO - 
+2025-08-27 10:32:20,769 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:22,802 - historical_backfill - INFO - 
+2025-08-27 10:32:22,812 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:24,836 - historical_backfill - INFO - 
+2025-08-27 10:32:24,839 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:26,865 - historical_backfill - INFO - 
+2025-08-27 10:32:26,876 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:28,908 - historical_backfill - INFO - 
+2025-08-27 10:32:28,913 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:30,934 - historical_backfill - INFO - 
+2025-08-27 10:32:30,951 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:32,978 - historical_backfill - INFO - 
+2025-08-27 10:32:32,986 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:35,021 - historical_backfill - INFO - 
+2025-08-27 10:32:35,035 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:37,066 - historical_backfill - INFO - 
+2025-08-27 10:32:37,072 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:39,089 - historical_backfill - INFO - 
+2025-08-27 10:32:39,109 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:41,137 - historical_backfill - INFO - 
+2025-08-27 10:32:41,145 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:43,159 - historical_backfill - INFO - 
+2025-08-27 10:32:43,166 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:45,184 - historical_backfill - INFO - 
+2025-08-27 10:32:45,187 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:47,213 - historical_backfill - INFO - 
+2025-08-27 10:32:47,216 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:49,232 - historical_backfill - INFO - 
+2025-08-27 10:32:49,237 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:51,254 - historical_backfill - INFO - 
+2025-08-27 10:32:51,256 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:53,276 - historical_backfill - INFO - 
+2025-08-27 10:32:53,288 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:55,316 - historical_backfill - INFO - 
+2025-08-27 10:32:55,320 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:57,338 - historical_backfill - INFO - 
+2025-08-27 10:32:57,346 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:32:59,372 - historical_backfill - INFO - 
+2025-08-27 10:32:59,375 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:01,389 - historical_backfill - INFO - 
+2025-08-27 10:33:01,398 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:03,410 - historical_backfill - INFO - 
+2025-08-27 10:33:03,424 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:05,447 - historical_backfill - INFO - 
+2025-08-27 10:33:05,451 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:07,464 - historical_backfill - INFO - 
+2025-08-27 10:33:07,468 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:09,482 - historical_backfill - INFO - 
+2025-08-27 10:33:09,490 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:11,528 - historical_backfill - INFO - 
+2025-08-27 10:33:11,540 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:13,568 - historical_backfill - INFO - 
+2025-08-27 10:33:13,578 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:15,600 - historical_backfill - INFO - 
+2025-08-27 10:33:15,614 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:17,654 - historical_backfill - INFO - 
+2025-08-27 10:33:17,665 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:19,691 - historical_backfill - INFO - 
+2025-08-27 10:33:19,702 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:21,736 - historical_backfill - INFO - 
+2025-08-27 10:33:21,740 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:23,793 - historical_backfill - INFO - 
+2025-08-27 10:33:23,807 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:25,841 - historical_backfill - INFO - 
+2025-08-27 10:33:25,842 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:27,861 - historical_backfill - INFO - 
+2025-08-27 10:33:27,862 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:29,879 - historical_backfill - INFO - 
+2025-08-27 10:33:29,881 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:31,899 - historical_backfill - INFO - 
+2025-08-27 10:33:31,908 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:33,943 - historical_backfill - INFO - 
+2025-08-27 10:33:33,946 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:35,961 - historical_backfill - INFO - 
+2025-08-27 10:33:35,966 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:37,982 - historical_backfill - INFO - 
+2025-08-27 10:33:37,992 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:40,012 - historical_backfill - INFO - 
+2025-08-27 10:33:40,020 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:42,035 - historical_backfill - INFO - 
+2025-08-27 10:33:42,039 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:44,063 - historical_backfill - INFO - 
+2025-08-27 10:33:44,076 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:46,106 - historical_backfill - INFO - 
+2025-08-27 10:33:46,120 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:48,159 - historical_backfill - INFO - 
+2025-08-27 10:33:48,166 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:50,214 - historical_backfill - INFO - 
+2025-08-27 10:33:50,225 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:52,260 - historical_backfill - INFO - 
+2025-08-27 10:33:52,263 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:54,282 - historical_backfill - INFO - 
+2025-08-27 10:33:54,291 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:56,401 - historical_backfill - INFO - 
+2025-08-27 10:33:56,401 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:33:58,431 - historical_backfill - INFO - 
+2025-08-27 10:33:58,436 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:34:00,446 - historical_backfill - INFO - 
+2025-08-27 10:34:00,452 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:34:02,486 - historical_backfill - INFO - 
+2025-08-27 10:34:02,517 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:34:04,540 - historical_backfill - INFO - 
+2025-08-27 10:34:04,544 - historical_backfill - ERROR - TikTok batch processing error: 'TikTokShopOrderExtractor' object has no attribute 'extract_orders_by_date_range'
+2025-08-27 10:34:06,558 - historical_backfill - INFO - 
+2025-08-27 10:34:06,560 - historical_backfill - INFO - ============================================================
+2025-08-27 10:34:06,563 - historical_backfill - INFO - ============================================================
+2025-08-27 10:34:06,601 - historical_backfill - INFO - 
+2025-08-27 10:34:06,604 - historical_backfill - INFO - ============================================================
+2025-08-27 10:39:26,692 - historical_backfill - INFO - ============================================================
+2025-08-27 10:39:26,693 - historical_backfill - INFO - STARTING COMPLETE HISTORICAL BACKFILL
+2025-08-27 10:39:26,693 - historical_backfill - INFO - ============================================================
+2025-08-27 10:39:26,695 - historical_backfill - INFO - Date range: 2024-07-01 to 2024-07-07
+2025-08-27 10:39:26,695 - historical_backfill - INFO - Batch size: 7 days
+2025-08-27 10:39:26,695 - historical_backfill - INFO - Total days to process: 6
+2025-08-27 10:39:26,696 - historical_backfill - INFO - 
+2025-08-27 10:39:26,696 - historical_backfill - INFO - Running pre-flight checks...
+2025-08-27 10:39:27,158 - historical_backfill - INFO -    Database connection: OK
+2025-08-27 10:39:27,567 - historical_backfill - WARNING -    TikTok Shop API: Connection issues
+2025-08-27 10:39:27,720 - historical_backfill - INFO - Pre-flight checks completed
+2025-08-27 10:39:27,720 - historical_backfill - INFO - 
+2025-08-27 10:39:27,725 - historical_backfill - INFO - 
+2025-08-27 10:39:29,743 - historical_backfill - INFO - 
+2025-08-27 10:39:29,743 - historical_backfill - INFO - ============================================================
+2025-08-27 10:39:29,747 - historical_backfill - INFO - ============================================================
+2025-08-27 10:39:29,769 - historical_backfill - INFO - 
+2025-08-27 10:39:29,772 - historical_backfill - INFO - ============================================================
+2025-08-27 10:39:39,269 - historical_backfill - INFO - ============================================================
+2025-08-27 10:39:39,270 - historical_backfill - INFO - STARTING COMPLETE HISTORICAL BACKFILL
+2025-08-27 10:39:39,270 - historical_backfill - INFO - ============================================================
+2025-08-27 10:39:39,270 - historical_backfill - INFO - Date range: 2024-07-01 to 2024-07-07
+2025-08-27 10:39:39,270 - historical_backfill - INFO - Batch size: 7 days
+2025-08-27 10:39:39,271 - historical_backfill - INFO - Total days to process: 6
+2025-08-27 10:39:39,271 - historical_backfill - INFO - 
+2025-08-27 10:39:39,271 - historical_backfill - INFO - Running pre-flight checks...
+2025-08-27 10:39:39,391 - historical_backfill - INFO -    Database connection: OK
+2025-08-27 10:39:39,658 - historical_backfill - WARNING -    TikTok Shop API: Connection issues
+2025-08-27 10:39:39,718 - historical_backfill - INFO - Pre-flight checks completed
+2025-08-27 10:39:39,720 - historical_backfill - INFO - 
+2025-08-27 10:39:39,724 - historical_backfill - INFO - 
+2025-08-27 10:39:41,744 - historical_backfill - INFO - 
+2025-08-27 10:39:41,744 - historical_backfill - INFO - ============================================================
+2025-08-27 10:39:41,768 - historical_backfill - INFO - ============================================================
+2025-08-27 10:39:41,812 - historical_backfill - INFO - 
+2025-08-27 10:39:41,813 - historical_backfill - INFO - ============================================================
+2025-08-27 10:40:24,762 - historical_backfill - INFO - ============================================================
+2025-08-27 10:40:24,762 - historical_backfill - INFO - STARTING COMPLETE HISTORICAL BACKFILL
+2025-08-27 10:40:24,762 - historical_backfill - INFO - ============================================================
+2025-08-27 10:40:24,764 - historical_backfill - INFO - Date range: 2024-07-01 to 2024-07-07
+2025-08-27 10:40:24,764 - historical_backfill - INFO - Batch size: 7 days
+2025-08-27 10:40:24,764 - historical_backfill - INFO - Total days to process: 6
+2025-08-27 10:40:24,764 - historical_backfill - INFO - 
+2025-08-27 10:40:24,764 - historical_backfill - INFO - Running pre-flight checks...
+2025-08-27 10:40:24,937 - historical_backfill - INFO -    Database connection: OK
+2025-08-27 10:40:25,235 - historical_backfill - WARNING -    TikTok Shop API: Connection issues
+2025-08-27 10:40:25,303 - historical_backfill - INFO - Pre-flight checks completed
+2025-08-27 10:40:25,304 - historical_backfill - INFO - 
+2025-08-27 10:40:25,306 - historical_backfill - INFO - 
+2025-08-27 10:40:27,573 - historical_backfill - INFO - 
+2025-08-27 10:40:27,574 - historical_backfill - INFO - ============================================================
+2025-08-27 10:40:27,576 - historical_backfill - INFO - ============================================================
+2025-08-27 10:40:27,596 - historical_backfill - INFO - 
+2025-08-27 10:40:27,600 - historical_backfill - INFO - ============================================================

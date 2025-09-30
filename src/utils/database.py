@@ -112,8 +112,8 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 for statement in statements:
                     if statement:
-                        conn.execute(text(statement))
-                        conn.commit()
+                        with conn.begin():  # Start a transaction that auto-commits
+                            conn.execute(text(statement))
                         
             logger.info(f"Successfully executed SQL file: {file_path}")
             return True
@@ -138,8 +138,8 @@ class DatabaseManager:
             """
             
             with self.get_connection() as conn:
-                conn.execute(text(sql))
-                conn.commit()
+                with conn.begin():  # Start a transaction that auto-commits
+                    conn.execute(text(sql))
                 
             logger.info(f"Staging schema '{settings.staging_schema}' ensured")
             return True
@@ -199,8 +199,8 @@ class DatabaseManager:
             sql = f"TRUNCATE TABLE {full_table_name}"
             
             with self.get_connection() as conn:
-                conn.execute(text(sql))
-                conn.commit()
+                with conn.begin():  # Start a transaction that auto-commits
+                    conn.execute(text(sql))
                 
             logger.info(f"Table {full_table_name} truncated successfully")
             return True

@@ -1,0 +1,9 @@
+https://open.shopee.com/developer-guide/16
+
+https://open.shopee.com/documents/v2/v2.order.get_order_list?module=94&type=1
+
+https://open.shopee.com/documents/v2/v2.order.get_order_detail?module=94&type=1
+
+------------
+tài liệu ngoài shopee
+https://readmedium.com/shopee-openapi-handsup-e0daca280f75?utm_source=chatgpt.com

@@ -1,285 +1,315 @@
-# Hệ Thống ETL Production TikTok Shop│   └── utils/                    # Modules tiện ích
-│       ├── auth.py              # Xác thực TikTok API
-│       ├── database.py          # Thao tác database
-│       └── logging.py           # Thiết lập logging
-├── sql/                          # Scripts database
-│   ├── 01_create_database.sql   # Khởi tạo database
-│   └── staging/
-│       └── create_tiktok_shop_orders_table.sql
-├── config/                       # Cấu hình ứng dụng
-│   ├── __init__.py              # Config module init
-│   └── settings.py              # Quản lý settings
-├── logs/                         # Files log ETL production sẵn sàng triển khai để trích xuất dữ liệu đơn hàng TikTok Shop và tải vào database staging SQL Server với sự điều phối của Apache Airflow.
+# Hệ Thống ETL Enterprise Multi-Platform
+│ Dữ liệu tập trung từ TikTok Shop, MISA ## ✨ Tính Năng
 
-## Kiến trúc
+- **✅ Full Load ETL**: Lấy toàn bộ dữ liệu historical từ 3 platforms
+- **⚡ Incremental ETL**: Tự động cập nhật mỗi 15 phút
+- **🔄 Parallel Processing**: 3 platforms xử lý đồng thời
+- **📈 Batch Updates**: Tối ưu hóa hiệu suất với batch processing
+## 📈 Performanceheck
+
+
+### Common Issues
+- **Token expired**: Check credentials và refresh tokens
+- **DB connection**: Verify SQL Server container status
+- **API errors**: Review rate limits và error logsuplicate
+- **🏢 Enterprise Ready**: Docker + Airflow production-grade
+- **🔧 Scalable**: Sẵn sàng tích hợp thêm platforms
+│ Full Load tự động + Incremental Updates mỗi 15 phút cho các nền tảng thương mại điện tử
+### Staging Tables (Current)
+
+#### TikTok Shop
+1. **`staging.tiktok_shop_order_detail`**: (115+ columns)
+   - Order details với flatt## 🔧 Platform Features
+
+- **TikTok Shop**: Order flattening, App Key auth, token refresh
+- **MISA CRM**: Multi-entity support, OAuth2, incremental tracking  
+- **Shopee**: 12 normalized tables, auto token refresh, batch API calls Meta## 📈 Performance & Scaling
+
+- **🔥 Parallel Processing**: 3 platforms (TikTok Shop + MISA CRM + Shopee) đồng thời
+- **💾 Memory Management**: Streaming ETL để xử lý datasets lớn
+- **⚡ Incremental Updates**: Chỉ xử lý data mới/thay đổi trong 15 phút window
+- **🔄 Fault Tolerance**: Auto-retry và error recovery cho từng platform
+- **📉 Monitoring**: Comprehensive logging và metrics
+- **🎯 Shopee Optimization**: 
+  - API batch processing (50 orders per call)
+  - Auto token refresh với database persistence
+  - Binary search cho earliest date detection
+  - Memory-efficient DataFrame processingTL timestamps, batch tracking
+
+#### MISA CRM
+2. **`staging.misa_customers`**: (77+ columns)  
+   - Customer master data từ MISA CRM
+   - Contact info, addresses, business metrics
+
+## ⚙️ Configuration
+
+**Schedule**: 
+- Full Load: Manual trigger (1 lần đầu)
+- Incremental: Mỗi 10 phút tự động
+
+**Performance Settings**:
+- Batch size: 1000 records
+- API timeout: 30 seconds
+- Retry attempts: 3 times
+- Shopee API: 50 orders per batch
+
+### ERD Design (Shopee)
+```
+shopee_orders (order_sn PK)
+├── shopee_recipient_address (order_sn PK/FK)
+├── shopee_order_items (order_sn, order_item_id PK)
+│   └── shopee_order_item_locations (order_sn, order_item_id, location_id PK)
+├── shopee_packages (order_sn, package_number PK)
+│   └── shopee_package_items (order_sn, package_number, order_item_id PK)
+├── shopee_invoice (order_sn PK/FK)
+├── shopee_payment_info (order_sn, transaction_id PK)
+├── shopee_order_pending_terms (order_sn, term PK)
+├── shopee_order_warnings (order_sn, warning PK)
+├── shopee_prescription_images (order_sn, image_url PK)
+└── shopee_buyer_proof_of_collection (order_sn, image_url PK)
+``` Dự Án
+
+**✅ HOÀN THÀNH**: TikTok Shop + MISA CRM + Shopee  
+**🔄 PRODUCTION**: Full Load + Incremental ETL tự động cho 3 platforms  
+**🔮 TƯƠNG LAI**: Mở rộng thêm các nền tảng khác (Lazada, Sendo, etc.) 
+
+## 🏗️ Kiến Trúc
 
 ```
-TikTok Shop API → Extractor → Transformer → Loader → SQL Server Staging
-                      ↓
-              Điều phối Apache Airflow
-                      ↓
-                 Docker Containers
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ Data Sources    │───▶│  ETL Process     │───▶│ SQL Server     │
+│ TikTok Shop     │    │ (Airflow DAG)    │    │ (Staging DB)   │
+│ MISA CRM        │    │                  │    │                │
+│ + Shopee (T2)   │    │ Auto-Schedule    │    │ Data Warehouse │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                ↓
+                         Docker Containers
 ```
 
-## Tính năng
+## ✨ Tính Năng
 
-- **Trích xuất dữ liệu tự động**: Lấy dữ liệu đơn hàng từ TikTok Shop API
-- **Chuyển đổi dữ liệu**: Làm phẳng cấu trúc đơn hàng cho database staging
-- **Database Staging**: SQL Server với schema được tối ưu cho phân tích
-- **Điều phối**: Apache Airflow cho lập lịch và giám sát
-- **Container hóa**: Thiết lập Docker cho triển khai nhất quán
-- **Xử lý lỗi**: Logging toàn diện và cơ chế thử lại
-- **Khả năng mở rộng**: Thiết kế modular để thêm nhiều platform thương mại điện tử
+- **✅ Full Load ETL**: Lấy toàn bộ dữ liệu historical từ TikTok Shop (từ 1/7/2024) + MISA CRM
+- **⚡ Incremental ETL**: Tự động cập nhật dữ liệu mới mỗi 10 phút cho cả 2 nền tảng
+- **🔄 Parallel Processing**: TikTok Shop và MISA CRM xử lý đồng thời
+- **📈 Real-time Updates**: UPSERT logic để tránh dữ liệu duplicate  
+- **🎯 Data Quality**: Validation, error handling và logging toàn diện
+- **🏢 Enterprise Ready**: Docker + Apache Airflow cho production environment
+- **🔧 Scalable**: Kiến trúc sẵn sàng tích hợp các nền tảng mới
 
-## Cấu trúc dự án
+## 📁 Cấu Trúc Dự Án
 
 ```
-tiktok-etl-production/
+facolos-data-pipelines/
 ├── dags/                           # Airflow DAGs
-│   └── tiktok_shop_orders_etl_dag.py # Quy trình ETL chính
-├── src/                           # Mã nguồn
-│   ├── extractors/               # Modules trích xuất dữ liệu
-│   │   └── tiktok_shop_extractor.py
-│   ├── transformers/             # Modules chuyển đổi dữ liệu
-│   │   └── tiktok_shop_transformer.py
-│   ├── loaders/                  # Modules tải dữ liệu
-│   │   └── tiktok_shop_staging_loader.py
-│   ├── utils/                    # Modules tiện ích
-│   │   ├── auth.py              # Xác thực TikTok API
-│   │   ├── database.py          # Thao tác database
-│   │   └── logging.py           # Thiết lập logging
-│   └── config/                   # Cấu hình ứng dụng
-│       ├── __init__.py          # Config module init
-│       └── settings.py          # Quản lý settings
-├── sql/                          # Scripts database
-│   ├── 01_create_database.sql   # Khởi tạo database
-│   └── staging/
-│       └── create_tiktok_shop_orders_table.sql
-├── logs/                         # Files log
-├── tests/                        # Files test
-├── .env                          # Environment variables
-├── Dockerfile                    # Thiết lập Docker container
-├── docker-compose.yml           # Thiết lập multi-container
-├── requirements.txt             # Dependencies Python
-├── run_etl.py                   # Chạy ETL thủ công
+│   ├── full_load_etl_dag.py        # Full Load: 1 lần duy nhất cho 3 platforms
+│   ├── incremental_etl_dag.py      # Incremental: mỗi 10 phút cho 3 platforms
+│   └── test_etl_limited_data.py    # Testing DAG
+├── src/                           # Mã nguồn ETL
+│   ├── extractors/                # API Data Extractors
+│   │   ├── tiktok_shop_extractor.py
+│   │   ├── misa_crm_extractor.py
+│   │   └── shopee_orders_extractor.py   # ✅ SHOPEE COMPLETED
+│   ├── transformers/              # Data Transform
+│   │   ├── tiktok_shop_transformer.py
+│   │   ├── misa_crm_transformer.py
+│   │   └── shopee_orders_transformer.py # ✅ SHOPEE COMPLETED
+│   ├── loaders/                   # Database Loaders
+│   │   ├── tiktok_shop_staging_loader.py
+│   │   ├── misa_crm_loader.py
+│   │   └── shopee_orders_loader.py      # ✅ SHOPEE COMPLETED
+│   └── utils/                     # Shared Utilities
+│       ├── auth.py               # Multi-platform Authentication
+│       ├── database.py           # SQL Server connections
+│       ├── logging.py            # Enterprise logging
+│       ├── etl_logging.py        # ETL-specific logging
+│       └── quiet_logger.py       # Quiet logging for cleanup
+├── config/                       # Application Settings  
+│   ├── settings.py              # Multi-platform configurations
+│   └── production.py             # Production overrides
+├── sql/                          # Database Scripts
+│   ├── 00_master_setup.sql      # Database + Tables creation (includes Shopee)
+│   └── entrypoint.sh            # DB initialization
+├── docs/                         # Documentation
+│   ├── SHOPEE_INTEGRATION_GUIDE.md      # ✅ SHOPEE DOCS
+│   ├── shopee_orders.ipynb             # ✅ SHOPEE DEVELOPMENT
+│   ├── misa_crm_api.ipynb              # MISA CRM development
+│   ├── tiktok_shop_api.ipynb           # TikTok Shop development
+│   └── shopee_orders_data/             # Sample data files
+├── logs/                         # Log files
+├── docker-compose.yml            # Multi-container orchestration  
+├── requirements.txt              # Python dependencies
 └── README.md                    # File này
 ```
 
-## Yêu cầu tiên quyết
+## 🔧 Cài Đặt & Triển Khai
 
-- Docker và Docker Compose
-- Thông tin xác thực TikTok Shop API
-- Tối thiểu 4GB RAM cho containers
+### 1. Prerequisites
+- Docker + Docker Compose 
+- ℹ️ **TikTok Shop API**: App Key, Secret, Access Token, Refresh Token, Shop Cipher
+- ℹ️ **MISA CRM API**: Client ID, Client Secret, Access Token
+- ℹ️ **Shopee API**: Partner ID, Partner Key, Shop ID, Access Token, Refresh Token
+- ℹ️ **SQL Server**: Database connection credentials
+- 💾 **Minimum**: 4GB RAM cho containers
 
-## Hướng dẫn cài đặt
-
-### 1. Clone và cấu hình
+### 2. Environment Setup
 
 ```bash
-cd "tiktok-etl-production"
+# Clone repository
+git clone <repository-url>
+cd facolos-data-pipelines
 
-# Chỉnh sửa .env với thông tin xác thực của bạn
-notepad .env  # hoặc editor bạn ưa thích
+# Cấu hình credentials
+cp .env.example .env
+nano .env  # Chỉnh sửa API credentials
 ```
 
-### 2. Cấu hình biến môi trường
-
-Chỉnh sửa file `.env` với thông tin TikTok của bạn:
-
+**File `.env` template:**
 ```env
-# Cấu hình TikTok Shop API
-TIKTOK_APP_KEY=6h2cosrovhjab
+# TikTok Shop API Credentials  
+TIKTOK_APP_KEY=your_app_key
 TIKTOK_APP_SECRET=your_app_secret_here
-TIKTOK_ACCESS_TOKEN=your_access_token_here
+TIKTOK_ACCESS_TOKEN=your_access_token_here  
 TIKTOK_REFRESH_TOKEN=your_refresh_token_here
 TIKTOK_SHOP_CIPHER=your_shop_cipher_here
 
-# Cấu hình Database
-DB_PASSWORD=FacolosDB2024!
+# MISA CRM API Credentials
+MISA_CRM_CLIENT_ID=your_client_id
+MISA_CRM_CLIENT_SECRET=your_client_secret_here
+MISA_CRM_ACCESS_TOKEN=your_access_token_here
+
+# Shopee API Credentials (REQUIRED)
+SHOPEE_PARTNER_ID=your_partner_id
+SHOPEE_PARTNER_KEY=your_partner_key
+SHOPEE_SHOP_ID=your_shop_id
+SHOPEE_REDIRECT_URI=https://yourapp.com/callback
+
+# Shopee tokens (lần đầu cần điền; lần sau sẽ đọc DB và auto refresh)
+SHOPEE_ACCESS_TOKEN=your_first_run_access_token
+SHOPEE_REFRESH_TOKEN=your_first_run_refresh_token
+
+# Database Configurations
+SQL_SERVER_PASSWORD=your_secure_password
+SQL_SERVER_DATABASE=Facolos_Staging
+
+# Shopee ETL Settings (optional)
+SHOPEE_TOKEN_REFRESH_BUFFER=300
+SHOPEE_ETL_BATCH_SIZE=1000
+SHOPEE_INCREMENTAL_LOOKBACK_MINUTES=15
 ```
 
-### 3. Khởi động hệ thống
+### 3. Launch Application
 
 ```bash
-# Build và khởi động tất cả containers
+# Khởi động toàn bộ system
 docker-compose up -d
 
-# Kiểm tra trạng thái container
-docker-compose ps
-
-# Xem logs
+# Kiểm tra containers
+docker-compose ps  
 docker-compose logs -f airflow-webserver
 ```
 
-### 4. Truy cập Airflow
+### 4. Truy Cập Dashboard
 
-- **Web UI**: http://localhost:8080
-- **Username**: admin
-- **Password**: admin
+- **🖥️ Airflow Web UI**: http://localhost:8080
+  - Username: `admin`
+  - Password: Xem trong docker-compose.yml
+- **💾 Database**: SQL Server trên port 1433 (development connection)
 
-### 5. Khởi tạo Database
+## 🚀 Sử Dụng ETL Pipeline
 
-Database và các bảng staging sẽ được tạo tự động khi containers khởi động. Bạn có thể xác minh bằng cách kiểm tra SQL Server container:
+### Full Load (Lần đầu - 1 lần)
 
-```bash
-# Kết nối đến SQL Server (tùy chọn)
-docker exec -it tiktok_sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "FacolosDB2024!"
-```
+1. **Trigger Full Load DAG:**
+   - Vào Airflow UI → DAGs → `full_load_etl_dag`
+   - Click "Trigger DAG" để chạy một lần duy nhất
+   - Quá trình sẽ lấy TẤT CẢ dữ liệu historical từ:
+     - **TikTok Shop**: Từ 1/7/2024 đến hiện tại
+     - **MISA CRM**: Tất cả customers, products, orders
+     - **Shopee**: Auto-detect earliest order date (tối đa 2 năm) hoặc từ ngày cấu hình
 
-## Sử dụng
+2. **Monitoring:**
+   - Theo dõi progress trên Airflow UI
+   - Check data trong SQL Server tables
+   - Logs chi tiết trong `/logs/` folder
 
-### Giao diện Web Airflow
+### Incremental Updates (15 phút/lần)
 
-1. Truy cập http://localhost:8080
-2. Tìm DAG `tiktok_shop_orders_etl`
-3. Bật ON để kích hoạt lập lịch tự động
-4. Click "Trigger DAG" để thực thi thủ công
+Theo mặc định sẽ **TỰ ĐỘNG CHẠY** mỗi 15 phút:
 
-### Thực thi ETL thủ công
+- ✅ **TikTok Shop**: Dữ liệu đơn hàng mới/cập nhật trong 15 phút gần nhất  
+- ✅ **MISA CRM**: Khách hàng, đơn hàng, sản phẩm, kho và liên hệ được cập nhật
+- ✅ **Shopee**: Đơn hàng mới trong 15 phút gần nhất với auto token refresh
+- 🔄 **UPSERT Logic**: Không tạo duplicate, chỉ update dữ liệu có thay đổi
 
-Cho testing hoặc chạy một lần:
-
-```bash
-# Test kết nối
-python run_etl.py test
-
-# Chạy ETL đầy đủ cho 7 ngày gần đây
-python run_etl.py etl --days-back 7 --load-mode append
-
-# Chỉ trích xuất đơn hàng
-python run_etl.py extract --days-back 1
-```
-
-### Giám sát
-
-- **Airflow UI**: http://localhost:8080 - Trạng thái thực thi DAG
-- **Logs**: Kiểm tra thư mục `logs/` hoặc container logs
-- **Database**: Query bảng staging để xác minh dữ liệu
-
-## Cấu hình
-
-### Lập lịch
-
-DAG được cấu hình chạy mỗi 6 giờ. Chỉnh sửa trong `dags/tiktok_shop_orders_etl_dag.py`:
-
-```python
-schedule_interval='0 */6 * * *'  # Mỗi 6 giờ
-```
-
-### Batch Size
-
-Điều chỉnh batch size trích xuất trong `config/settings.py`:
-
-```python
-etl_batch_size: int = 1000
-```
-
-### Logic thử lại
-
-Cấu hình số lần thử và delay:
-
-```python
-etl_retry_attempts: int = 3
-etl_retry_delay: int = 60  # giây
-```
-
-## Schema Database
-
-### Bảng Staging: `Facolos_Staging.tiktok_shop_orders`
-
-Bảng staging sử dụng cấu trúc phẳng với mỗi dòng đại diện cho một line item từ đơn hàng:
-
-- **ETL Metadata**: `etl_batch_id`, `etl_created_at`, `etl_updated_at`
-- **Thông tin đơn hàng**: `order_id`, `order_status`, `create_time`, etc.
-- **Số tiền đơn hàng**: `total_amount`, `shipping_fee`, `tax_amount`, etc.
-- **Thông tin người nhận**: `recipient_name`, `recipient_address_*`, etc.
-- **Chi tiết sản phẩm**: `item_id`, `item_name`, `item_quantity`, etc.
-
-## Khắc phục sự cố
-
-### Vấn đề thường gặp
-
-1. **Lỗi xác thực API**
-   - Kiểm tra thông tin TikTok trong `.env`
-   - Xác minh tính hợp lệ của token và refresh tokens
-
-2. **Vấn đề kết nối Database**
-   - Đảm bảo SQL Server container đang chạy
-   - Kiểm tra thông tin xác thực database và connection string
-
-3. **DAG Airflow không xuất hiện**
-   - Kiểm tra syntax DAG để tìm lỗi
-   - Xác minh file trong thư mục `dags/`
-   - Kiểm tra logs Airflow scheduler
-
-### Lệnh debug
+### Manual Execution (Testing)
 
 ```bash
-# Kiểm tra container logs
-docker-compose logs airflow-scheduler
-docker-compose logs sqlserver
+# Test kết nối tất cả APIs
+python test_connections.py
 
-# Test kết nối API
+# Test từng platform riêng lẻ
+python -c "from src.extractors.misa_crm_extractor import MISACRMExtractor; MISACRMExtractor().health_check()"
 python -c "from src.extractors.tiktok_shop_extractor import TikTokShopOrderExtractor; TikTokShopOrderExtractor().test_api_connection()"
-
-# Test kết nối database
-python -c "from src.loaders.tiktok_shop_staging_loader import TikTokShopOrderLoader; TikTokShopOrderLoader().test_connection()"
+python -c "from src.extractors.shopee_orders_extractor import ShopeeOrderExtractor; extractor = ShopeeOrderExtractor(); print('Shopee ready:', bool(extractor.access_token))"
 ```
 
-### Files Log
+## 📊 Database Schema
 
-- **ETL Logs**: `logs/tiktok_etl_*.log`
-- **Airflow Logs**: `logs/dag_id/task_id/execution_date/`
-- **Container Logs**: `docker-compose logs [service_name]`
+### Staging Tables (19 bảng)
 
-## Phát triển
+#### TikTok Shop (1 bảng)
+- **`staging.tiktok_shop_order_detail`**: Order details với flattened line items (115+ columns)
 
-### Thêm Extractors mới
+#### MISA CRM (5 bảng)
+- **`staging.misa_customers`**: Customer master data (77+ columns)
+- **`staging.misa_sale_orders_flattened`**: Flattened order items 
+- **`staging.misa_contacts`**: Contact person data
+- **`staging.misa_stocks`**: Stock/warehouse data
+- **`staging.misa_products`**: Product catalog
 
-1. Tạo extractor mới trong `src/extractors/`
-2. Theo pattern từ `tiktok_shop_extractor.py`
-3. Thêm transformer và loader tương ứng
-4. Tạo DAG mới hoặc mở rộng DAG hiện tại
+#### Shopee Platform (12 bảng normalized)
+- **`staging.shopee_orders`**: Main orders table
+- **`staging.shopee_recipient_address`**: Delivery addresses
+- **`staging.shopee_order_items`**: Order line items
+- **`staging.shopee_order_item_locations`**: Item locations
+- **`staging.shopee_packages`**: Package information
+- **`staging.shopee_package_items`**: Items in packages
+- **`staging.shopee_invoice`**: Invoice details
+- **`staging.shopee_payment_info`**: Payment transactions
+- **`staging.shopee_order_pending_terms`**: Pending terms
+- **`staging.shopee_order_warnings`**: Order warnings
+- **`staging.shopee_prescription_images`**: Prescription images
+- **`staging.shopee_buyer_proof_of_collection`**: Collection proof
 
-### Testing
+#### ETL Control (1 bảng)
+- **`etl_control.api_token_storage`**: API token management
 
-```bash
-# Chạy tests thủ công
-python run_etl.py test
 
-# Test các component riêng lẻ
-python -m pytest tests/  # Khi tests được thêm vào
-```
+## ⚙️ Configuration
 
-### Cấu trúc Code
+**Schedule**: 
+- Full Load: Manual trigger (1 lần đầu)
+- Incremental: Mỗi 10 phút tự động
 
-- **Extractors**: Xử lý kết nối API và trích xuất dữ liệu
-- **Transformers**: Chuyển đổi dữ liệu thô sang định dạng staging
-- **Loaders**: Chèn dữ liệu vào database
-- **Utils**: Chức năng chia sẻ (auth, database, logging)
 
-## Cân nhắc về hiệu suất
+## 📈 Performance
 
-- **Rate Limiting**: Delay tích hợp cho API calls
-- **Batch Processing**: Xử lý datasets lớn theo chunks
-- **Incremental Loading**: Tránh dữ liệu trùng lặp
-- **Connection Pooling**: Kết nối database hiệu quả
+- **Parallel Processing**: 3 platforms đồng thời
+- **Incremental Updates**: Chỉ data mới trong 15 phút
+- **Memory Efficient**: Streaming + batch processing
+- **Fault Tolerance**: Auto-retry + error recovery
 
-## Bảo mật
+## 💼 Business Value
 
-- Biến môi trường cho dữ liệu nhạy cảm
-- Không hardcode thông tin xác thực trong code
-- Bảo vệ SQL injection qua parameterized queries
-- Cô lập container cho các services
+✅ **Multi-Platform Data**: TikTok Shop + MISA CRM + Shopee  
+✅ **Real-time Sync**: Cập nhật mỗi 10 phút  
+✅ **Analytics Ready**: Normalized schema  
+✅ **Fully Automated**: Zero manual intervention  
+✅ **Production Grade**: Docker + Airflow
 
-## Giám sát và Cảnh báo
+### Airflow UI Monitoring
+- **Logs**: Real-time log viewing per task cho cả 3 platforms
+- **Task Duration**: Performance metrics 
+- **Failure Alerts**: Automatic task retry logic
+- **Manual Triggers**: On-demand execution
 
-Cải tiến trong tương lai có thể bao gồm:
-- Thông báo email khi DAG thất bại
-- Giám sát chất lượng dữ liệu
-- Thu thập metrics hiệu suất
-- Tích hợp với công cụ giám sát (Grafana, Prometheus)
-
-## Giấy phép
-
-Chỉ sử dụng nội bộ - Hệ thống ETL Công ty Facolos

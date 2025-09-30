@@ -13,7 +13,7 @@ class ProductionConfig:
     """Production configuration settings"""
     
     # ETL Schedule Settings
-    INCREMENTAL_SCHEDULE_MINUTES = 10  # Updated from 15 to 10 minutes
+    INCREMENTAL_SCHEDULE_MINUTES = 15
     MAX_ACTIVE_RUNS = 1
     CATCHUP = False
     

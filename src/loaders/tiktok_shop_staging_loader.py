@@ -61,14 +61,16 @@ class TikTokShopOrderLoader:
     def load_orders(self, 
                    df: pd.DataFrame, 
                    load_mode: str = 'append',
-                   validate_before_load: bool = True) -> bool:
+                   validate_before_load: bool = True,
+                   batch_size: int = 500) -> bool:
         """
-        Load order data into staging table
+        Load order data into staging table với memory optimization
         
         Args:
             df: DataFrame with order data
             load_mode: Loading mode ('append', 'replace', 'truncate_insert')
             validate_before_load: Whether to validate data before loading
+            batch_size: Số rows load mỗi batch để tránh OOM
             
         Returns:
             True if successful, False otherwise
@@ -78,7 +80,7 @@ class TikTokShopOrderLoader:
                 logger.warning("DataFrame is empty, nothing to load")
                 return True
                 
-            logger.info(f"Loading {len(df)} rows into staging table...")
+            logger.info(f"Loading {len(df)} rows into staging table in batches of {batch_size}...")
             
             # Validate data if requested
             if validate_before_load:
@@ -96,38 +98,58 @@ class TikTokShopOrderLoader:
                     logger.error("Failed to truncate staging table")
                     return False
                 load_mode = 'append'
-            elif load_mode == 'replace':
-                # This will drop and recreate the table
-                pass
-            elif load_mode == 'append':
-                # Default append mode
-                pass
-            else:
-                logger.error(f"Unsupported load mode: {load_mode}")
-                return False
                 
-            # Load data into database
-            success = self.db.insert_dataframe(
-                df_prepared,
-                self.staging_table,
-                self.staging_schema,
-                if_exists=load_mode
-            )
+            # Load data in batches để tránh memory issues
+            total_batches = (len(df_prepared) + batch_size - 1) // batch_size
+            logger.info(f"Processing {total_batches} batches for loading")
             
-            if success:
-                logger.info(f"Successfully loaded {len(df_prepared)} rows")
-                return True
-            else:
-                logger.error("Failed to load data into staging table")
-                return False
+            for i in range(0, len(df_prepared), batch_size):
+                batch_num = (i // batch_size) + 1
+                batch_df = df_prepared.iloc[i:i + batch_size].copy()
                 
+                logger.info(f"Loading batch {batch_num}/{total_batches}: {len(batch_df)} rows")
+                
+                try:
+                    # Load batch to database
+                    success = self.db.insert_dataframe(
+                        df=batch_df,
+                        table_name=self.staging_table,
+                        schema=self.staging_schema,  # Fixed: parameter name is 'schema' not 'schema_name'
+                        if_exists=load_mode
+                    )
+                    
+                    if not success:
+                        logger.error(f"Failed to load batch {batch_num}")
+                        return False
+                        
+                    logger.info(f"Batch {batch_num} loaded successfully")
+                    
+                    # Set subsequent batches to append mode
+                    if load_mode == 'replace':
+                        load_mode = 'append'
+                        
+                    # Memory cleanup
+                    del batch_df
+                    
+                    if batch_num % 5 == 0:  # Cleanup every 5 batches
+                        import gc
+                        gc.collect()
+                        logger.info(f"Memory cleanup after batch {batch_num}")
+                        
+                except Exception as e:
+                    logger.error(f"Error loading batch {batch_num}: {str(e)}")
+                    return False
+            
+            logger.info(f"Successfully loaded all {len(df_prepared)} rows to staging table")
+            return True
+            
         except Exception as e:
-            logger.error(f"Error loading orders: {str(e)}")
+            logger.error(f"Error in load_orders: {str(e)}")
             return False
             
     def load_incremental_orders(self, df: pd.DataFrame) -> bool:
         """
-        Load orders incrementally (avoiding duplicates)
+        Load orders incrementally using UPSERT (INSERT/UPDATE) logic
         
         Args:
             df: DataFrame with order data
@@ -140,16 +162,142 @@ class TikTokShopOrderLoader:
                 logger.warning("DataFrame is empty, nothing to load")
                 return True
                 
-            logger.info(f"Loading {len(df)} rows incrementally...")
+            logger.info(f"Loading {len(df)} rows incrementally with UPSERT logic...")
             
-            # For incremental loads, we'll use MERGE logic or check for existing records
-            # For now, we'll use simple append mode and rely on database constraints
-            # to handle duplicates (if any are defined)
-            
-            return self.load_orders(df, load_mode='append', validate_before_load=True)
+            # Prepare the data
+            df_prepared = self._prepare_dataframe(df)
+            if df_prepared is None:
+                return False
+                
+            # Use MERGE statement for proper UPSERT
+            return self._upsert_orders(df_prepared)
             
         except Exception as e:
             logger.error(f"Error in incremental load: {str(e)}")
+            return False
+            
+    def _upsert_orders(self, df: pd.DataFrame) -> bool:
+        """
+        Perform UPSERT operation using SQL MERGE statement
+        
+        Args:
+            df: Prepared DataFrame
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with self.db.get_connection() as conn:
+                # Create temp table for batch processing
+                temp_table = f"#{self.staging_table}_temp"
+                
+                # Create temp table with same structure
+                create_temp_sql = f"""
+                CREATE TABLE {temp_table} (
+                    order_id NVARCHAR(50) NOT NULL,
+                    shop_id NVARCHAR(50),
+                    order_status INT,
+                    create_time DATETIME2,
+                    update_time DATETIME2,
+                    buyer_email NVARCHAR(255),
+                    shipping_provider NVARCHAR(100),
+                    tracking_number NVARCHAR(100),
+                    delivery_type INT,
+                    delivery_option_id NVARCHAR(50),
+                    is_cod_order BIT,
+                    payment_method_name NVARCHAR(100),
+                    payment_method_id INT,
+                    shipping_fee_platform_discount DECIMAL(18,2),
+                    platform_discount DECIMAL(18,2),
+                    seller_discount DECIMAL(18,2),
+                    tax_amount DECIMAL(18,2),
+                    order_amount DECIMAL(18,2),
+                    currency NVARCHAR(10),
+                    recipient_address NVARCHAR(MAX),
+                    etl_batch_id NVARCHAR(50),
+                    etl_created_at DATETIME2,
+                    etl_updated_at DATETIME2
+                )
+                """
+                
+                conn.execute(create_temp_sql)
+                logger.info(f"Created temp table {temp_table}")
+                
+                # Insert data to temp table
+                df.to_sql(
+                    name=temp_table[1:],  # Remove # prefix for pandas
+                    con=self.db.engine,
+                    schema=self.staging_schema,
+                    if_exists='append',
+                    index=False,
+                    method='multi'
+                )
+                
+                # Perform MERGE operation
+                merge_sql = f"""
+                MERGE [{self.staging_schema}].[{self.staging_table}] AS target
+                USING {temp_table} AS source
+                ON target.order_id = source.order_id
+                
+                WHEN MATCHED AND (
+                    target.update_time < source.update_time OR
+                    target.order_status != source.order_status OR
+                    target.tracking_number != source.tracking_number
+                ) THEN
+                    UPDATE SET
+                        shop_id = source.shop_id,
+                        order_status = source.order_status,
+                        create_time = source.create_time,
+                        update_time = source.update_time,
+                        buyer_email = source.buyer_email,
+                        shipping_provider = source.shipping_provider,
+                        tracking_number = source.tracking_number,
+                        delivery_type = source.delivery_type,
+                        delivery_option_id = source.delivery_option_id,
+                        is_cod_order = source.is_cod_order,
+                        payment_method_name = source.payment_method_name,
+                        payment_method_id = source.payment_method_id,
+                        shipping_fee_platform_discount = source.shipping_fee_platform_discount,
+                        platform_discount = source.platform_discount,
+                        seller_discount = source.seller_discount,
+                        tax_amount = source.tax_amount,
+                        order_amount = source.order_amount,
+                        currency = source.currency,
+                        recipient_address = source.recipient_address,
+                        etl_updated_at = GETDATE()
+                        
+                WHEN NOT MATCHED THEN
+                    INSERT (
+                        order_id, shop_id, order_status, create_time, update_time,
+                        buyer_email, shipping_provider, tracking_number, delivery_type,
+                        delivery_option_id, is_cod_order, payment_method_name, 
+                        payment_method_id, shipping_fee_platform_discount, platform_discount,
+                        seller_discount, tax_amount, order_amount, currency,
+                        recipient_address, etl_batch_id, etl_created_at, etl_updated_at
+                    )
+                    VALUES (
+                        source.order_id, source.shop_id, source.order_status, 
+                        source.create_time, source.update_time, source.buyer_email,
+                        source.shipping_provider, source.tracking_number, source.delivery_type,
+                        source.delivery_option_id, source.is_cod_order, source.payment_method_name,
+                        source.payment_method_id, source.shipping_fee_platform_discount,
+                        source.platform_discount, source.seller_discount, source.tax_amount,
+                        source.order_amount, source.currency, source.recipient_address,
+                        source.etl_batch_id, source.etl_created_at, source.etl_updated_at
+                    );
+                """
+                
+                result = conn.execute(merge_sql)
+                rows_affected = result.rowcount
+                
+                # Drop temp table
+                conn.execute(f"DROP TABLE {temp_table}")
+                
+                logger.info(f"UPSERT completed: {rows_affected} rows affected")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error in _upsert_orders: {str(e)}")
             return False
             
     def get_load_statistics(self) -> Dict[str, Any]:
@@ -272,20 +420,71 @@ class TikTokShopOrderLoader:
                     # TikTok timestamps are in seconds, convert to proper datetime if needed
                     pass  # Keep as integer for now, can convert later if needed
                     
-            # Ensure string columns are not too long
+            # Ensure string columns are not too long (tăng kích thước để phù hợp với database schema)
             string_columns = {
                 'order_id': 50,
                 'order_status': 50,
-                'currency': 10,
+                'payment_currency': 10,
+                'item_currency': 10,
+                'region': 10,
                 'item_id': 50,
                 'item_sku_id': 50,
-                'item_name': 500,
-                'item_sku_name': 500
+                'item_product_id': 50,
+                'item_product_name': 500,
+                'item_sku_name': 500,
+                'item_sku_type': 50,
+                'item_seller_sku': 100,
+                'item_display_status': 50,
+                'buyer_email': 255,
+                'payment_method_name': 100,
+                'warehouse_id': 50,
+                'user_id': 50,
+                'request_id': 100,
+                'shop_id': 50,
+                'shop_cipher': 100,
+                'delivery_option_id': 50,
+                'delivery_option_name': 100,
+                'delivery_type': 50,
+                'order_type': 50,
+                'shipping_provider': 100,
+                'shipping_provider_id': 50,
+                'shipping_type': 50,
+                'tracking_number': 100,
+                'cancel_user': 50,
+                'buyer_uid': 50,
+                'split_or_combine_tag': 50,
+                'delivery_option': 100,
+                'order_line_id': 50,
+                'cpf': 50,
+                'recipient_first_name': 100,
+                'recipient_first_name_local_script': 100,
+                'recipient_last_name': 100,
+                'recipient_last_name_local_script': 100,
+                'recipient_name': 200,
+                'recipient_phone_number': 50,
+                'recipient_postal_code': 20,
+                'recipient_region_code': 20,
+                'package_id': 50,
+                'package_status': 50,
+                'package_shipping_provider_id': 50,
+                'package_shipping_provider_name': 100,
+                'package_tracking_number': 100,
+                'item_package_id': 50,
+                'item_package_status': 50,
+                'item_shipping_provider_id': 50,
+                'item_shipping_provider_name': 100,
+                'item_tracking_number': 100,
+                'item_cancel_user': 50,
+                'etl_batch_id': 50,
+                'etl_source': 50
             }
             
             for col, max_length in string_columns.items():
                 if col in df_prepared.columns:
+                    # Convert to string and truncate if necessary
                     df_prepared[col] = df_prepared[col].astype(str).str[:max_length]
+                    # Replace 'nan' strings with None
+                    df_prepared[col] = df_prepared[col].replace('nan', None)
                     
             # Handle None/NaN values appropriately
             df_prepared = df_prepared.where(pd.notnull(df_prepared), None)

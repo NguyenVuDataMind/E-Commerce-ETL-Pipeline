@@ -10,14 +10,17 @@ RUN apt-get update \
         unixodbc-dev \
         curl \
         gnupg \
+        apt-transport-https \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Microsoft ODBC Driver for SQL Server
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+# Install Microsoft ODBC Driver 18 for SQL Server using the recommended method
+RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
     && rm -rf /var/lib/apt/lists/*
+
 
 USER airflow
 

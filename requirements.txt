@@ -1,11 +1,19 @@
 # Airflow dependencies
 apache-airflow[celery,postgres,redis]==2.7.0
 celery>=5.2.0
+redis<5.0.0,>=4.0.0
+
+# Airflow Providers
+apache-airflow-providers-microsoft-mssql>=3.4.0
+apache-airflow-providers-postgres>=5.6.0
+apache-airflow-providers-redis>=3.2.0
 
 # Database connections
+
 pyodbc>=4.0.39
 sqlalchemy>=1.4.0
-pymssql>=2.2.8
+
+methodtools>=0.4.0
 
 # API and data processing
 requests>=2.28.0
@@ -23,6 +31,7 @@ pydantic>=1.10.0
 tenacity>=8.0.0
 
 # Development and testing
+
 pytest>=7.0.0
 pytest-cov>=4.0.0
 black>=22.0.0

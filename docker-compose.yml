@@ -1,22 +1,23 @@
-version: '3.8'
-
 services:
   # SQL Server Database - Facolos Enterprise Data Warehouse
   sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    build:
+      context: ./sql
     container_name: facolos_enterprise_sqlserver
     environment:
       - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=FacolosDB2024!
+      - MSSQL_SA_PASSWORD=${SQL_SERVER_PASSWORD}
+
       - MSSQL_PID=Express
     ports:
       - "1433:1433"
     volumes:
-      - D:/Facolos_Enterprise_Data/SQL_Server_Data:/var/opt/mssql
-      - ./sql:/docker-entrypoint-initdb.d
+      - sqlserver_data:/var/opt/mssql
+
     networks:
       - facolos_enterprise_network
     restart: unless-stopped
+
 
   # Apache Airflow - PostgreSQL (Airflow metadata)
   postgres:
@@ -27,10 +28,11 @@ services:
       - POSTGRES_PASSWORD=airflow
       - POSTGRES_DB=airflow
     volumes:
-      - D:/Facolos_Enterprise_Data/Airflow_Metadata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - facolos_enterprise_network
     restart: unless-stopped
+
 
   # Redis (Airflow message broker)
   redis:
@@ -42,88 +44,163 @@ services:
       - facolos_enterprise_network
     restart: unless-stopped
 
-  # Airflow Webserver
+
+  # Airflow Webserver - Production Configuration
   airflow-webserver:
     build: .
     container_name: facolos_enterprise_airflow_webserver
     depends_on:
       - postgres
       - redis
+      - sqlserver
     environment:
+      # Core Airflow Configuration
       - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
       - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
       - AIRFLOW__CELERY__BROKER_URL=redis://:@redis:6379/0
       - AIRFLOW__CORE__FERNET_KEY=YlCImzjge_TeZc6jGAjVLO8b5iWFm_3vNt0BY7r_Jsk=
-      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=true
+
+
+      # Custom Connections
+      - AIRFLOW_CONN_MSSQL_FACOLOS_DW=mssql://sa:${SQL_SERVER_PASSWORD}@sqlserver:1433/${SQL_SERVER_DATABASE}?driver=ODBC+Driver+17+for+SQL+Server&Encrypt=no
+      # Production ETL Settings
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG=1
+      - AIRFLOW__CORE__DAG_CONCURRENCY=16
+      - AIRFLOW__CORE__PARALLELISM=32
+      - AIRFLOW__SCHEDULER__CATCHUP_BY_DEFAULT=false
+      - AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=30
+
+      # API and Security
       - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
-      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=true
+      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=false
+      - AIRFLOW__WEBSERVER__RBAC=true
+      - AIRFLOW__CORE__TEST_CONNECTION=Enabled
+
+      # User Creation
       - _AIRFLOW_DB_UPGRADE=true
       - _AIRFLOW_WWW_USER_CREATE=true
-      - _AIRFLOW_WWW_USER_USERNAME=admin
-      - _AIRFLOW_WWW_USER_PASSWORD=admin
+      - _AIRFLOW_WWW_USER_USERNAME=${_AIRFLOW_WWW_USER_USERNAME:-admin}
+      - _AIRFLOW_WWW_USER_PASSWORD=${_AIRFLOW_WWW_USER_PASSWORD:-facolos2024}
+    env_file:
+      - ./.env
     volumes:
       - ./dags:/opt/airflow/dags
-      - D:/Facolos_Enterprise_Data/Airflow_Logs:/opt/airflow/logs
+      - airflow_logs:/opt/airflow/logs
       - ./src:/opt/airflow/src
       - ./config:/opt/airflow/config
     ports:
       - "8080:8080"
     command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     networks:
       - facolos_enterprise_network
     restart: unless-stopped
 
-  # Airflow Scheduler
+  # Airflow Scheduler - Production Configuration
   airflow-scheduler:
     build: .
     container_name: facolos_enterprise_airflow_scheduler
     depends_on:
       - postgres
       - redis
+      - sqlserver
     environment:
+      # Core Airflow Configuration
       - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
       - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
       - AIRFLOW__CELERY__BROKER_URL=redis://:@redis:6379/0
       - AIRFLOW__CORE__FERNET_KEY=YlCImzjge_TeZc6jGAjVLO8b5iWFm_3vNt0BY7r_Jsk=
-      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=true
+
+      # Custom Connections
+      - AIRFLOW_CONN_MSSQL_FACOLOS_DW=mssql://sa:${SQL_SERVER_PASSWORD}@sqlserver:1433/${SQL_SERVER_DATABASE}?driver=ODBC+Driver+17+for+SQL+Server&Encrypt=no
+
+      # Production ETL Settings
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG=1
+      - AIRFLOW__SCHEDULER__CATCHUP_BY_DEFAULT=false
+      - AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=30
+
+      # Health Check
+      - AIRFLOW__CORE__TEST_CONNECTION=Enabled
+      - AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK=true
+    env_file:
+      - ./.env
     volumes:
       - ./dags:/opt/airflow/dags
-      - D:/Facolos_Enterprise_Data/Airflow_Logs:/opt/airflow/logs
+      - airflow_logs:/opt/airflow/logs
       - ./src:/opt/airflow/src
       - ./config:/opt/airflow/config
     command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     networks:
       - facolos_enterprise_network
     restart: unless-stopped
 
-  # Airflow Worker
+  # Airflow Worker - Production Configuration với Memory Optimization
   airflow-worker:
     build: .
     container_name: facolos_enterprise_airflow_worker
     depends_on:
       - postgres
       - redis
+      - sqlserver
+    # Memory optimization để tránh OOM
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
     environment:
+      # Core Airflow Configuration
       - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+
+      # Custom Connections
+      - AIRFLOW_CONN_MSSQL_FACOLOS_DW=mssql://sa:${SQL_SERVER_PASSWORD}@sqlserver:1433/${SQL_SERVER_DATABASE}?driver=ODBC+Driver+17+for+SQL+Server&Encrypt=no
       - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
       - AIRFLOW__CELERY__BROKER_URL=redis://:@redis:6379/0
       - AIRFLOW__CORE__FERNET_KEY=YlCImzjge_TeZc6jGAjVLO8b5iWFm_3vNt0BY7r_Jsk=
-      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=true
+
+      # Production ETL Settings
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__CORE__TEST_CONNECTION=Enabled
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG=1
+
+      # Worker Settings
+      - AIRFLOW__CELERY__WORKER_CONCURRENCY=4
+    env_file:
+      - ./.env
     volumes:
       - ./dags:/opt/airflow/dags
-      - D:/Facolos_Enterprise_Data/Airflow_Logs:/opt/airflow/logs
+      - airflow_logs:/opt/airflow/logs
       - ./src:/opt/airflow/src
       - ./config:/opt/airflow/config
     command: celery worker
     networks:
       - facolos_enterprise_network
     restart: unless-stopped
+
+volumes:
+  sqlserver_data:
+  postgres_data:
+  airflow_logs:
 
 networks:
   facolos_enterprise_network:

@@ -1,270 +1,467 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Production Incremental ETL DAG - 15 phút/lần
-Production-ready Airflow DAG cho incremental updates từ MISA CRM và TikTok Shop
-với monitoring, alerting, và performance tracking
+Incremental ETL DAG - Chạy mỗi 15 phút để lấy dữ liệu mới
+Thiết kế để chạy sau khi Full Load đã hoàn thành
 """
 
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
-from airflow.operators.email import EmailOperator
-from airflow.utils.dates import days_ago
-from airflow.models import Variable
-import sys
-import os
+from airflow.operators.dummy import DummyOperator
+import logging
 import json
+import os
+import sys
 
-# Add project root to Python path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
+# Add project root to path
+sys.path.append('/opt/airflow/')
 
-# Import production configuration
-from config.production import ProductionConfig
+# Import các modules
+from src.extractors.misa_crm_extractor import MISACRMExtractor
+from src.extractors.tiktok_shop_extractor import TikTokShopOrderExtractor
+from src.extractors.shopee_orders_extractor import ShopeeOrderExtractor
+from src.transformers.misa_crm_transformer import MISACRMTransformer
+from src.transformers.tiktok_shop_transformer import TikTokShopOrderTransformer
+from src.transformers.shopee_orders_transformer import ShopeeOrderTransformer
+from src.loaders.misa_crm_loader import MISACRMLoader
+from src.loaders.tiktok_shop_staging_loader import TikTokShopOrderLoader
+from src.loaders.shopee_orders_loader import ShopeeOrderLoader
+from config.settings import settings
 
-# Get production DAG configuration
-dag_config = ProductionConfig.get_airflow_dag_config()
+logger = logging.getLogger(__name__)
 
-# DAG definition với production settings
+# DAG Configuration
+default_args = {
+    'owner': 'data-team',
+    'depends_on_past': False,
+    'start_date': datetime(2025, 9, 3),
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 2,
+    'retry_delay': timedelta(minutes=2),
+    'catchup': False,
+}
+
 dag = DAG(
-    'facolos_incremental_etl_production',
-    default_args={
-        'owner': 'facolos-etl-production',
-        'depends_on_past': False,
-        'start_date': days_ago(1),
-        **dag_config['default_args']
-    },
-    description='Production Incremental ETL cho MISA CRM và TikTok Shop - 15 phút/lần',
-    schedule_interval=dag_config['schedule_interval'],
-    max_active_runs=dag_config['max_active_runs'],
-    catchup=dag_config['catchup'],
-    tags=['facolos', 'etl', 'incremental', 'production', 'misa-crm', 'tiktok-shop']
+    'incremental_etl_dag',
+    default_args=default_args,
+    description='Incremental ETL Pipeline - Runs every 15 minutes for fresh data',
+    schedule_interval='*/15 * * * *',  # Mỗi 15 phút
+    max_active_runs=1,  # Không cho chạy parallel
+    tags=['etl', 'incremental', 'production']
 )
 
-def run_incremental_etl(**context):
-    """Main incremental ETL function với production monitoring"""
-    from src.extractors.misa_crm_extractor import MISACRMExtractor
-    from src.extractors.tiktok_shop_extractor import TikTokShopOrderExtractor
-    from src.transformers.misa_crm_transformer import MISACRMTransformer
-    from src.transformers.tiktok_shop_transformer import TikTokShopOrderTransformer
-    from src.loaders.misa_crm_loader import MISACRMLoader
-    from src.loaders.tiktok_shop_staging_loader import TikTokShopOrderLoader
-    from src.utils.logging import setup_logging
+# ========================
+# TIKTOK SHOP INCREMENTAL FUNCTIONS
+# ========================
 
-    logger = setup_logging("airflow_incremental_etl")
-    execution_date = context['execution_date']
-    task_instance = context['task_instance']
-
-    logger.info(f"🚀 AIRFLOW PRODUCTION ETL - Starting incremental ETL for {execution_date}")
-    logger.info(f"📋 Task Instance: {task_instance.task_id}")
-    logger.info(f"🔄 DAG Run ID: {context['dag_run'].run_id}")
-
-    cycle_start_time = datetime.now()
-    results = {
-        'execution_date': execution_date.isoformat(),
-        'dag_run_id': context['dag_run'].run_id,
-        'task_id': task_instance.task_id,
-        'start_time': cycle_start_time,
-        'misa_crm': {},
-        'tiktok_shop': {},
-        'total_records': 0,
-        'success': False
-    }
-
+def extract_tiktok_shop_incremental(**context):
+    """
+    Extract dữ liệu TikTok Shop incremental (cửa sổ cấu hình, mặc định 15 phút)
+    """
+    logger.info("🔄 Starting TikTok Shop Incremental Extraction...")
+    
     try:
-        # PHASE 1: MISA CRM Incremental
-        logger.info("🏢 PHASE 1: MISA CRM Incremental ETL")
+        extractor = TikTokShopOrderExtractor()
         
-        misa_extractor = MISACRMExtractor()
-        misa_transformer = MISACRMTransformer()
-        misa_loader = MISACRMLoader()
+        # Lấy dữ liệu gần nhất theo cấu hình (buffer đã xử lý trong extractor)
+        minutes_back = int(getattr(settings, 'etl_incremental_lookback_minutes', 15))
         
-        misa_endpoints = [
-            {'name': 'customers', 'table': 'customers', 'priority': 2},
-            {'name': 'sale_orders', 'table': 'sale_orders_flattened', 'priority': 1},
-            {'name': 'contacts', 'table': 'contacts', 'priority': 3},
-            {'name': 'stocks', 'table': 'stocks', 'priority': 4},
-            {'name': 'products', 'table': 'products', 'priority': 5}
-        ]
+        logger.info(f"📅 Incremental lookback: {minutes_back} minutes")
         
-        misa_endpoints.sort(key=lambda x: x['priority'])
+        # Extract incremental orders từ API
+        orders_data = extractor.extract_incremental_orders(minutes_back=minutes_back)
         
-        for endpoint in misa_endpoints:
-            try:
-                logger.info(f"   🔄 Processing {endpoint['name']}...")
-                
-                raw_data = misa_extractor.extract_all_data_from_endpoint(
-                    endpoint['name'], max_pages=2
-                )
-                
-                if not raw_data:
-                    logger.info(f"   ⚠️ No new data for {endpoint['name']}")
-                    results['misa_crm'][endpoint['name']] = 0
-                    continue
-                
-                if endpoint['name'] == 'sale_orders':
-                    transformed_data = misa_transformer.transform_sale_orders_flattened(raw_data)
-                else:
-                    transform_method = getattr(misa_transformer, f'transform_{endpoint["name"]}')
-                    transformed_data = transform_method(raw_data)
-                
-                import pandas as pd
-                df = pd.DataFrame(transformed_data)
-                success = misa_loader.load_dataframe_to_staging(df, endpoint['table'])
-                
-                if success:
-                    records_count = len(df)
-                    results['misa_crm'][endpoint['name']] = records_count
-                    results['total_records'] += records_count
-                    logger.info(f"   ✅ {endpoint['name']}: {records_count} records processed")
-                else:
-                    logger.warning(f"   ⚠️ {endpoint['name']}: Load failed (likely duplicates)")
-                    results['misa_crm'][endpoint['name']] = 0
-                    
-            except Exception as e:
-                logger.error(f"   ❌ {endpoint['name']} error: {e}")
-                results['misa_crm'][endpoint['name']] = 'error'
+        logger.info(f"✅ Extracted {len(orders_data)} incremental orders")
         
-        # PHASE 2: TikTok Shop Incremental
-        logger.info("\n🛒 PHASE 2: TikTok Shop Incremental ETL")
+        # Push to XCom
+        context['ti'].xcom_push(key='tiktok_shop_incremental_data', value=orders_data)
         
-        try:
-            tiktok_extractor = TikTokShopOrderExtractor()
-            tiktok_transformer = TikTokShopOrderTransformer()
-            tiktok_loader = TikTokShopOrderLoader()
-            
-            raw_orders = tiktok_extractor.extract_recent_orders(days_back=1)
-            
-            if raw_orders:
-                transformed_df = tiktok_transformer.transform_orders_to_dataframe(raw_orders)
-                success = tiktok_loader.load_incremental_orders(transformed_df)
-                
-                if success:
-                    records_count = len(transformed_df)
-                    results['tiktok_shop']['orders'] = records_count
-                    results['total_records'] += records_count
-                    logger.info(f"   ✅ TikTok Shop: {records_count} records processed")
-                else:
-                    logger.warning(f"   ⚠️ TikTok Shop: Load failed")
-                    results['tiktok_shop']['orders'] = 0
-            else:
-                logger.info("   ⚠️ No new TikTok Shop orders")
-                results['tiktok_shop']['orders'] = 0
-                
-        except Exception as e:
-            logger.error(f"   ❌ TikTok Shop error: {e}")
-            results['tiktok_shop']['orders'] = 'error'
+        return f"Successfully extracted {len(orders_data)} incremental orders"
         
-        # Calculate final metrics
-        cycle_end_time = datetime.now()
-        duration = (cycle_end_time - cycle_start_time).total_seconds()
-        results['end_time'] = cycle_end_time
-        results['duration_seconds'] = duration
-        results['success'] = True
-
-        logger.info(f"\n📊 AIRFLOW PRODUCTION ETL SUMMARY:")
-        logger.info(f"   ⏱️  Duration: {duration:.1f} seconds")
-        logger.info(f"   📊 Total records processed: {results['total_records']}")
-        logger.info(f"   🏢 MISA CRM results: {results['misa_crm']}")
-        logger.info(f"   🛒 TikTok Shop results: {results['tiktok_shop']}")
-        logger.info(f"   ✅ Execution successful: {results['success']}")
-
-        # Store results in XCom for monitoring
-        task_instance.xcom_push(key='etl_results', value=results)
-
-        return results
-
     except Exception as e:
-        results['success'] = False
-        results['error'] = str(e)
-        results['end_time'] = datetime.now()
-        results['duration_seconds'] = (results['end_time'] - cycle_start_time).total_seconds()
-
-        # Store error results in XCom
-        task_instance.xcom_push(key='etl_results', value=results)
-
-        logger.error(f"❌ Airflow Production ETL failed: {e}")
+        logger.error(f"❌ TikTok Shop incremental extraction failed: {str(e)}")
         raise
 
-def verify_data_quality(**context):
-    """Verify data quality sau incremental ETL"""
-    from src.utils.logging import setup_logging
-    import pyodbc
-    from config.settings import settings
-    
-    logger = setup_logging("data_quality_check")
+def transform_tiktok_shop_incremental(**context):
+    """
+    Transform dữ liệu TikTok Shop incremental
+    """
+    logger.info("🔄 Starting TikTok Shop Incremental Transformation...")
     
     try:
-        connection_string = (
-            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-            f"SERVER={settings.sql_server_host},{settings.sql_server_port};"
-            f"DATABASE={settings.sql_server_database};"
-            f"UID={settings.sql_server_username};"
-            f"PWD={settings.sql_server_password};"
-            f"TrustServerCertificate=yes"
-        )
+        # Pull data from XCom
+        orders_data = context['ti'].xcom_pull(key='tiktok_shop_incremental_data')
         
-        connection = pyodbc.connect(connection_string)
-        cursor = connection.cursor()
+        if not orders_data:
+            logger.info("📭 No incremental data to transform")
+            return "No data to transform"
         
-        tables = [
-            'misa_customers', 'misa_sale_orders_flattened', 'misa_contacts',
-            'misa_stocks', 'misa_products', 'tiktok_shop_order_detail'
-        ]
+        # Transform data
+        transformer = TikTokShopOrderTransformer()
+        transformed_df = transformer.transform_orders(orders_data)
         
-        total_records = 0
-        tables_with_data = 0
+        logger.info(f"✅ Transformed {len(transformed_df)} incremental records")
         
-        for table in tables:
-            cursor.execute(f"SELECT COUNT(*) FROM staging.{table}")
-            count = cursor.fetchone()[0]
-            total_records += count
-            
-            if count > 0:
-                tables_with_data += 1
-            
-            logger.info(f"   {table}: {count:,} rows")
+        # Convert DataFrame to dict for XCom
+        # Replace NaN values with None to make it JSON serializable
+        transformed_df_clean = transformed_df.fillna(None)
+        transformed_data = transformed_df_clean.to_dict('records')
+        context['ti'].xcom_push(key='tiktok_shop_incremental_transformed', value=transformed_data)
         
-        cursor.close()
-        connection.close()
+        return f"Successfully transformed {len(transformed_df)} incremental records"
         
-        logger.info(f"📊 Data Quality Summary:")
-        logger.info(f"   Total records: {total_records:,}")
-        logger.info(f"   Tables with data: {tables_with_data}/6")
-        
-        if tables_with_data >= 5:
-            logger.info("✅ Data quality check passed")
-            return True
-        else:
-            logger.warning("⚠️ Data quality check warning: Some tables empty")
-            return False
-            
     except Exception as e:
-        logger.error(f"❌ Data quality check failed: {e}")
-        return False
+        logger.error(f"❌ TikTok Shop incremental transformation failed: {str(e)}")
+        raise
 
-# Task definitions
-incremental_etl_task = PythonOperator(
-    task_id='run_incremental_etl',
-    python_callable=run_incremental_etl,
-    dag=dag,
-    execution_timeout=timedelta(minutes=10)
-)
+def load_tiktok_shop_incremental(**context):
+    """
+    Load dữ liệu TikTok Shop incremental vào staging
+    """
+    logger.info("🔄 Starting TikTok Shop Incremental Loading...")
+    
+    try:
+        # Pull transformed data from XCom
+        transformed_data = context['ti'].xcom_pull(key='tiktok_shop_incremental_transformed')
+        
+        if not transformed_data:
+            logger.info("📭 No incremental data to load")
+            return "No data to load"
+        
+        # Convert back to DataFrame
+        import pandas as pd
+        df = pd.DataFrame(transformed_data)
+        
+        # Load to staging with UPSERT mode (update existing, insert new)
+        loader = TikTokShopOrderLoader()
+        
+        # Use incremental load with UPSERT logic
+        success = loader.load_incremental_orders(df)
+        
+        if success:
+            logger.info(f"✅ Loaded {len(df)} incremental records to staging")
+            return f"Successfully loaded {len(df)} incremental records"
+        else:
+            logger.error(f"❌ Failed to load {len(df)} incremental records")
+            raise Exception(f"Failed to load {len(df)} incremental records")
+        
+    except Exception as e:
+        logger.error(f"❌ TikTok Shop incremental loading failed: {str(e)}")
+        raise
 
-data_quality_task = PythonOperator(
-    task_id='verify_data_quality',
-    python_callable=verify_data_quality,
-    dag=dag,
-    execution_timeout=timedelta(minutes=2)
-)
+# ========================
+# MISA CRM INCREMENTAL FUNCTIONS  
+# ========================
 
-health_check_task = BashOperator(
-    task_id='health_check',
-    bash_command='echo "✅ Incremental ETL completed successfully at $(date)"',
+def extract_misa_crm_incremental(**context):
+    """
+    Extract dữ liệu MISA CRM incremental (entities updated trong 15 phút gần nhất)
+    """
+    logger.info("🔄 Starting MISA CRM Incremental Extraction...")
+    
+    try:
+        extractor = MISACRMExtractor()
+        
+        # Các endpoints cần extract incremental
+        endpoints = ['customers', 'sale_orders', 'contacts', 'products']
+        incremental_data = {}
+        
+        # Lấy timestamp theo cấu hình lookback (phút)
+        cutoff_time = datetime.now() - timedelta(minutes=int(getattr(settings, 'etl_incremental_lookback_minutes', 15)))
+        
+        for endpoint in endpoints:
+            logger.info(f"📥 Extracting incremental {endpoint}...")
+            
+            # Extract với filter modified_date >= cutoff_time
+            # Note: Cần implement incremental logic trong MISA extractor
+            endpoint_data = extractor.extract_incremental_data(
+                endpoint, 
+                modified_since=cutoff_time
+            )
+            
+            incremental_data[endpoint] = endpoint_data
+            logger.info(f"✅ Extracted {len(endpoint_data)} incremental {endpoint}")
+        
+        # Push to XCom
+        context['ti'].xcom_push(key='misa_crm_incremental_data', value=json.dumps(incremental_data))
+        
+        total_records = sum(len(data) for data in incremental_data.values())
+        return f"Successfully extracted {total_records} incremental MISA CRM records"
+        
+    except Exception as e:
+        logger.error(f"❌ MISA CRM incremental extraction failed: {str(e)}")
+        raise
+
+def transform_misa_crm_incremental(**context):
+    """
+    Transform dữ liệu MISA CRM incremental
+    """
+    logger.info("🔄 Starting MISA CRM Incremental Transformation...")
+    
+    try:
+        # Pull data from XCom
+        raw_data = context['ti'].xcom_pull(key='misa_crm_incremental_data')
+        incremental_data = json.loads(raw_data) if raw_data else {}
+        
+        if not any(incremental_data.values()):
+            logger.info("📭 No incremental MISA CRM data to transform")
+            return "No data to transform"
+        
+        # Transform data
+        transformer = MISACRMTransformer()
+        transformed_data = transformer.transform_all_endpoints(incremental_data)
+        
+        # Convert DataFrames to dict for XCom
+        serialized_data = {}
+        total_records = 0
+        
+        for key, df in transformed_data.items():
+            if df is not None and not df.empty:
+                # Replace NaN values with None to make it JSON serializable
+                df_clean = df.fillna(None)
+                serialized_data[key] = df_clean.to_dict('records')
+                total_records += len(df)
+        
+        context['ti'].xcom_push(key='misa_crm_incremental_transformed', value=json.dumps(serialized_data))
+        
+        logger.info(f"✅ Transformed {total_records} incremental MISA CRM records")
+        return f"Successfully transformed {total_records} incremental records"
+        
+    except Exception as e:
+        logger.error(f"❌ MISA CRM incremental transformation failed: {str(e)}")
+        raise
+
+def load_misa_crm_incremental(**context):
+    """
+    Load dữ liệu MISA CRM incremental vào staging
+    """
+    logger.info("🔄 Starting MISA CRM Incremental Loading...")
+    
+    try:
+        # Pull transformed data from XCom
+        raw_data = context['ti'].xcom_pull(key='misa_crm_incremental_transformed')
+        transformed_data = json.loads(raw_data) if raw_data else {}
+        
+        if not transformed_data:
+            logger.info("📭 No incremental MISA CRM data to load")
+            return "No data to load"
+        
+        # Load to staging
+        loader = MISACRMLoader()
+        total_loaded = 0
+        
+        import pandas as pd
+        
+        for table_name, records in transformed_data.items():
+            if records:
+                df = pd.DataFrame(records)
+                
+                # Use incremental load with UPSERT logic
+                success = loader.load_incremental_data(table_name, df)
+                
+                if success:
+                    total_loaded += len(df)
+                    logger.info(f"✅ Loaded {len(df)} incremental {table_name} records")
+                else:
+                    logger.error(f"❌ Failed to load {len(df)} incremental {table_name} records")
+                    raise Exception(f"Failed to load incremental {table_name} records")
+        
+        logger.info(f"✅ Total loaded {total_loaded} incremental MISA CRM records")
+        return f"Successfully loaded {total_loaded} incremental records"
+        
+    except Exception as e:
+        logger.error(f"❌ MISA CRM incremental loading failed: {str(e)}")
+        raise
+
+# ========================
+# SHOPEE ORDERS INCREMENTAL FUNCTIONS
+# ========================
+
+def extract_shopee_orders_incremental(**context):
+    """
+    Extract dữ liệu Shopee Orders incremental (cửa sổ cấu hình, mặc định 15 phút)
+    """
+    logger.info("🔄 Starting Shopee Orders Incremental Extraction...")
+    
+    try:
+        extractor = ShopeeOrderExtractor()
+        
+        # Lấy dữ liệu gần nhất theo cấu hình (buffer đã xử lý trong extractor)
+        minutes_back = int(getattr(settings, 'etl_incremental_lookback_minutes', 15))
+        
+        logger.info(f"📅 Incremental lookback: {minutes_back} minutes")
+        
+        # Extract incremental orders từ API
+        orders_data = extractor.extract_orders_incremental(minutes_back=minutes_back)
+        
+        logger.info(f"✅ Extracted {len(orders_data)} incremental orders")
+        
+        # Push to XCom
+        context['ti'].xcom_push(key='shopee_orders_incremental_data', value=orders_data)
+        
+        return f"Successfully extracted {len(orders_data)} incremental orders"
+        
+    except Exception as e:
+        logger.error(f"❌ Shopee Orders incremental extraction failed: {str(e)}")
+        raise
+
+def transform_shopee_orders_incremental(**context):
+    """
+    Transform dữ liệu Shopee Orders incremental
+    """
+    logger.info("🔄 Starting Shopee Orders Incremental Transformation...")
+    
+    try:
+        # Pull data from XCom
+        orders_data = context['ti'].xcom_pull(key='shopee_orders_incremental_data')
+        
+        if not orders_data:
+            logger.info("📭 No incremental data to transform")
+            return "No data to transform"
+        
+        # Transform data
+        transformer = ShopeeOrderTransformer()
+        
+        # Transform to flat DataFrame (tương thích với loader hiện tại)
+        df = transformer.transform_orders_to_flat_dataframe(orders_data)
+        
+        logger.info(f"✅ Transformed {len(df)} incremental orders")
+        
+        # Convert DataFrame to dict for XCom
+        transformed_data = df.to_dict('records')
+        
+        # Push to XCom
+        context['ti'].xcom_push(key='shopee_orders_incremental_transformed', value=transformed_data)
+        
+        return f"Successfully transformed {len(transformed_data)} incremental orders"
+        
+    except Exception as e:
+        logger.error(f"❌ Shopee Orders incremental transformation failed: {str(e)}")
+        raise
+
+def load_shopee_orders_incremental(**context):
+    """
+    Load dữ liệu Shopee Orders incremental vào staging
+    """
+    logger.info("🔄 Starting Shopee Orders Incremental Loading...")
+    
+    try:
+        # Pull transformed data from XCom
+        transformed_data = context['ti'].xcom_pull(key='shopee_orders_incremental_transformed')
+        
+        if not transformed_data:
+            logger.info("📭 No incremental data to load")
+            return "No data to load"
+        
+        # Convert back to DataFrame
+        import pandas as pd
+        df = pd.DataFrame(transformed_data)
+        
+        # Load to staging with UPSERT mode (update existing, insert new)
+        loader = ShopeeOrderLoader()
+        
+        # Use incremental load with UPSERT logic
+        success = loader.load_orders_incremental(df)
+        
+        if success:
+            logger.info(f"✅ Loaded {len(df)} incremental records to staging")
+            return f"Successfully loaded {len(df)} incremental records"
+        else:
+            logger.error(f"❌ Failed to load {len(df)} incremental records")
+            raise Exception(f"Failed to load {len(df)} incremental records")
+        
+    except Exception as e:
+        logger.error(f"❌ Shopee Orders incremental loading failed: {str(e)}")
+        raise
+
+# ========================
+# DAG STRUCTURE
+# ========================
+
+# Start task
+start_incremental = DummyOperator(
+    task_id='start_incremental',
     dag=dag
 )
 
-# Task dependencies
-incremental_etl_task >> data_quality_task >> health_check_task
+# TikTok Shop Incremental Pipeline
+tiktok_extract_incremental = PythonOperator(
+    task_id='tiktok_shop_extract_incremental',
+    python_callable=extract_tiktok_shop_incremental,
+    dag=dag
+)
+
+tiktok_transform_incremental = PythonOperator(
+    task_id='tiktok_shop_transform_incremental',
+    python_callable=transform_tiktok_shop_incremental,
+    dag=dag
+)
+
+tiktok_load_incremental = PythonOperator(
+    task_id='tiktok_shop_load_incremental',
+    python_callable=load_tiktok_shop_incremental,
+    dag=dag
+)
+
+# MISA CRM Incremental Pipeline
+misa_extract_incremental = PythonOperator(
+    task_id='misa_crm_extract_incremental',
+    python_callable=extract_misa_crm_incremental,
+    dag=dag
+)
+
+misa_transform_incremental = PythonOperator(
+    task_id='misa_crm_transform_incremental',
+    python_callable=transform_misa_crm_incremental,
+    dag=dag
+)
+
+misa_load_incremental = PythonOperator(
+    task_id='misa_crm_load_incremental',
+    python_callable=load_misa_crm_incremental,
+    dag=dag
+)
+
+# Shopee Orders Incremental Pipeline
+shopee_extract_incremental = PythonOperator(
+    task_id='shopee_orders_extract_incremental',
+    python_callable=extract_shopee_orders_incremental,
+    dag=dag
+)
+
+shopee_transform_incremental = PythonOperator(
+    task_id='shopee_orders_transform_incremental',
+    python_callable=transform_shopee_orders_incremental,
+    dag=dag
+)
+
+shopee_load_incremental = PythonOperator(
+    task_id='shopee_orders_load_incremental',
+    python_callable=load_shopee_orders_incremental,
+    dag=dag
+)
+
+# End task
+end_incremental = DummyOperator(
+    task_id='end_incremental',
+    dag=dag
+)
+
+# ========================
+# TASK DEPENDENCIES
+# ========================
+
+# Parallel execution cho TikTok Shop, MISA CRM và Shopee Orders
+start_incremental >> [tiktok_extract_incremental, misa_extract_incremental, shopee_extract_incremental]
+
+# TikTok Shop pipeline
+tiktok_extract_incremental >> tiktok_transform_incremental >> tiktok_load_incremental
+
+# MISA CRM pipeline  
+misa_extract_incremental >> misa_transform_incremental >> misa_load_incremental
+
+# Shopee Orders pipeline
+shopee_extract_incremental >> shopee_transform_incremental >> shopee_load_incremental
+
+# All pipelines must complete before ending
+[tiktok_load_incremental, misa_load_incremental, shopee_load_incremental] >> end_incremental
