@@ -376,7 +376,7 @@ jobs:
             exit 1
           fi
           
-          if ! command -v docker-compose &> /dev/null; then
+          if ! docker compose version &> /dev/null; then
             echo 'Docker Compose chưa được cài đặt'
             exit 1
           fi
