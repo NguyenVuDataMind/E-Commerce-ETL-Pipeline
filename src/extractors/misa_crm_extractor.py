@@ -17,42 +17,45 @@ import os
 import threading
 
 # Import shared utilities
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 from config.settings import settings
 from src.utils.logging import setup_logging
 
 logger = setup_logging(__name__)
 
+
 class MISACRMExtractor:
     """
     MISA CRM Data Extractor - Tương tự TikTok Shop Extractor pattern
     """
-    
+
     def __init__(self):
         """Khởi tạo MISA CRM Extractor"""
-        self.credentials = settings.get_data_source_credentials('misa_crm')
-        self.client_id = self.credentials.get('client_id')
-        self.client_secret = self.credentials.get('client_secret')
+        self.credentials = settings.get_data_source_credentials("misa_crm")
+        self.client_id = self.credentials.get("client_id")
+        self.client_secret = self.credentials.get("client_secret")
         self.base_url = "https://crmconnect.misa.vn"  # URL gốc cố định theo tài liệu
         self.token_url = f"{self.base_url}/api/v2/Account"
 
         # Add threading lock for token refresh safety
         self._lock = threading.Lock()
-        
+
         # Initialize tokens - try database first, then fallback to .env
         self._load_persistent_tokens()
 
         # Endpoint configuration
         self.endpoints = {
-            'customers': '/api/v2/Customers',
-            'sale_orders': '/api/v2/SaleOrders',
-            'contacts': '/api/v2/Contacts',
-            'stocks': '/api/v2/Stocks',
-            'products': '/api/v2/Products'  # Giả định endpoint này tồn tại
+            "customers": "/api/v2/Customers",
+            "sale_orders": "/api/v2/SaleOrders",
+            "contacts": "/api/v2/Contacts",
+            "stocks": "/api/v2/Stocks",
+            "products": "/api/v2/Products",  # Giả định endpoint này tồn tại
         }
 
         logger.info(f"Khởi tạo MISA CRM Extractor cho {settings.company_name}")
-    
+
     def _load_persistent_tokens(self):
         """Load tokens from database similar to TikTok implementation"""
         try:
@@ -82,7 +85,9 @@ class MISACRMExtractor:
         # Fallback to .env file
         logger.warning("No MISA CRM token found in database. Using .env configuration.")
         self.access_token = settings.misa_crm_access_token
-        self.token_expires_at = self._decode_token_expiry(self.access_token) if self.access_token else None
+        self.token_expires_at = (
+            self._decode_token_expiry(self.access_token) if self.access_token else None
+        )
 
     def _save_tokens_to_db(self):
         """Save MISA CRM tokens to database like TikTok does"""
@@ -105,13 +110,13 @@ class MISACRMExtractor:
                 """
 
                 params = (
-                    'misa_crm',  # For USING clause
+                    "misa_crm",  # For USING clause
                     self.access_token,
                     self.token_expires_at,
-                    'misa_crm',  # For INSERT clause
+                    "misa_crm",  # For INSERT clause
                     self.access_token,
-                    '',  # MISA doesn't use refresh_token
-                    self.token_expires_at
+                    "",  # MISA doesn't use refresh_token
+                    self.token_expires_at,
                 )
 
                 cursor.execute(merge_sql, params)
@@ -120,31 +125,35 @@ class MISACRMExtractor:
 
         except Exception as e:
             logger.error(f"Failed to persist MISA CRM tokens to database: {e}")
-            
+
     def _decode_token_expiry(self, token: str) -> Optional[datetime]:
         """Decode JWT token để lấy thời gian hết hạn"""
         try:
             decoded = jwt.decode(token, options={"verify_signature": False})
-            exp_timestamp = decoded.get('exp')
-            
+            exp_timestamp = decoded.get("exp")
+
             if exp_timestamp:
                 return datetime.fromtimestamp(exp_timestamp)
             else:
-                logger.warning("Token không có thời gian hết hạn, sử dụng mặc định 1 giờ")
+                logger.warning(
+                    "Token không có thời gian hết hạn, sử dụng mặc định 1 giờ"
+                )
                 return datetime.now() + timedelta(hours=1)
-                
+
         except Exception as e:
             logger.warning(f"Không thể decode token: {e}, sử dụng mặc định 1 giờ")
             return datetime.now() + timedelta(hours=1)
-    
+
     def _is_token_expired(self) -> bool:
         """Kiểm tra token có hết hạn không"""
         if not self.access_token or not self.token_expires_at:
             return True
-        
-        buffer_time = datetime.now() + timedelta(seconds=settings.misa_crm_token_refresh_buffer)
+
+        buffer_time = datetime.now() + timedelta(
+            seconds=settings.misa_crm_token_refresh_buffer
+        )
         return buffer_time >= self.token_expires_at
-    
+
     def get_access_token(self, force_refresh: bool = False) -> Optional[str]:
         """Lấy access token, tự động làm mới nếu cần, tuân thủ tài liệu API v2."""
         with self._lock:  # Thread safety
@@ -153,34 +162,45 @@ class MISACRMExtractor:
                 return self.access_token
 
             if not self.client_id or not self.client_secret:
-                logger.error("MISA CRM client_id hoặc client_secret chưa được cấu hình.")
+                logger.error(
+                    "MISA CRM client_id hoặc client_secret chưa được cấu hình."
+                )
                 return None
 
             logger.info("Đang yêu cầu access token mới từ MISA CRM API.")
 
             request_body = {
                 "client_id": self.client_id,
-                "client_secret": self.client_secret
+                "client_secret": self.client_secret,
             }
             headers = {"Content-Type": "application/json"}
 
             try:
-                response = requests.post(self.token_url, json=request_body, headers=headers, timeout=settings.api_timeout)
+                response = requests.post(
+                    self.token_url,
+                    json=request_body,
+                    headers=headers,
+                    timeout=settings.api_timeout,
+                )
                 response.raise_for_status()  # Ném lỗi cho các HTTP status code 4xx/5xx
 
                 result = response.json()
-                if result.get('success') and 'data' in result and result['data']:
-                    self.access_token = result['data']
+                if result.get("success") and "data" in result and result["data"]:
+                    self.access_token = result["data"]
                     self.token_expires_at = self._decode_token_expiry(self.access_token)
-                    logger.info(f"Lấy token MISA CRM thành công, hết hạn lúc: {self.token_expires_at}")
-                    
+                    logger.info(
+                        f"Lấy token MISA CRM thành công, hết hạn lúc: {self.token_expires_at}"
+                    )
+
                     # Save to database for persistence
                     self._save_tokens_to_db()
-                    
+
                     return self.access_token
                 else:
-                    error_msg = result.get('error_message', str(result))
-                    logger.error(f"Lấy token MISA CRM thất bại. Phản hồi từ API: {error_msg}")
+                    error_msg = result.get("error_message", str(result))
+                    logger.error(
+                        f"Lấy token MISA CRM thất bại. Phản hồi từ API: {error_msg}"
+                    )
                     return None
 
             except requests.exceptions.RequestException as e:
@@ -194,24 +214,26 @@ class MISACRMExtractor:
         """
         Ensure we have a valid access token, refresh if necessary.
         Similar to TikTok authentication pattern.
-        
+
         Returns:
             True if we have a valid token, False otherwise
         """
         # Check if token is expired or will expire soon
         if self._is_token_expired():
-            logger.info("MISA CRM access token is expired or will expire soon, refreshing...")
+            logger.info(
+                "MISA CRM access token is expired or will expire soon, refreshing..."
+            )
             if not self.get_access_token(force_refresh=True):
                 logger.error("Failed to refresh MISA CRM access token")
                 return False
-                
+
         # Verify token is available
         if not self.access_token:
             logger.error("MISA CRM access token not available")
             return False
-            
+
         return True
-    
+
     def _get_headers(self) -> Optional[Dict[str, str]]:
         """Tạo headers cho API request, bao gồm cả việc lấy token."""
         token = self.get_access_token()
@@ -220,16 +242,20 @@ class MISACRMExtractor:
             return None
 
         if not self.client_id:
-            logger.error("Không thể tạo headers vì MISA_CRM_CLIENT_ID chưa được cấu hình.")
+            logger.error(
+                "Không thể tạo headers vì MISA_CRM_CLIENT_ID chưa được cấu hình."
+            )
             return None
 
         return {
             "Authorization": f"Bearer {token}",
             "Clientid": self.client_id,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
-    def _make_request_with_retry(self, method: str, url: str, **kwargs) -> Optional[requests.Response]:
+    def _make_request_with_retry(
+        self, method: str, url: str, **kwargs
+    ) -> Optional[requests.Response]:
         """Thực hiện request với logic retry và tự động làm mới token khi gặp lỗi 401."""
         for attempt in range(settings.api_retry_attempts):
             try:
@@ -238,8 +264,8 @@ class MISACRMExtractor:
                     logger.error("Bỏ qua request vì không thể tạo headers.")
                     return None
 
-                kwargs['headers'] = headers
-                kwargs['timeout'] = kwargs.get('timeout', settings.api_timeout)
+                kwargs["headers"] = headers
+                kwargs["timeout"] = kwargs.get("timeout", settings.api_timeout)
 
                 response = requests.request(method, url, **kwargs)
 
@@ -248,64 +274,75 @@ class MISACRMExtractor:
                     return response
 
                 # Nếu token hết hạn (401), thử làm mới và gọi lại
-                if response.status_code == 401 and attempt < settings.api_retry_attempts - 1:
-                    logger.warning(f"Lần thử {attempt + 1}: Token hết hạn (401). Đang làm mới và thử lại...")
-                    self.get_access_token(force_refresh=True) # Buộc làm mới token
-                    time.sleep(1) # Chờ 1 giây trước khi thử lại
-                    continue # Chuyển sang lần thử tiếp theo
+                if (
+                    response.status_code == 401
+                    and attempt < settings.api_retry_attempts - 1
+                ):
+                    logger.warning(
+                        f"Lần thử {attempt + 1}: Token hết hạn (401). Đang làm mới và thử lại..."
+                    )
+                    self.get_access_token(force_refresh=True)  # Buộc làm mới token
+                    time.sleep(1)  # Chờ 1 giây trước khi thử lại
+                    continue  # Chuyển sang lần thử tiếp theo
 
                 # Nếu là lỗi khác hoặc lần thử cuối cùng, báo lỗi và thoát
-                logger.error(f"Lần thử {attempt + 1}: Yêu cầu thất bại với mã trạng thái {response.status_code}. Nội dung: {response.text}")
+                logger.error(
+                    f"Lần thử {attempt + 1}: Yêu cầu thất bại với mã trạng thái {response.status_code}. Nội dung: {response.text}"
+                )
                 return None
 
             except requests.exceptions.RequestException as e:
                 logger.error(f"Lần thử {attempt + 1}: Lỗi kết nối - {e}")
                 if attempt >= settings.api_retry_attempts - 1:
-                    return None # Trả về None sau lần thử cuối
+                    return None  # Trả về None sau lần thử cuối
                 time.sleep(settings.api_retry_delay * (attempt + 1))
             except Exception as e:
                 logger.error(f"Lần thử {attempt + 1}: Lỗi không xác định - {e}")
-                return None # Lỗi không mong muốn, thoát ngay
+                return None  # Lỗi không mong muốn, thoát ngay
 
         return None
-    
-    def extract_endpoint_data(self, endpoint_name: str, page: int = 0, page_size: int = None, **params) -> Optional[Dict]:
+
+    def extract_endpoint_data(
+        self, endpoint_name: str, page: int = 0, page_size: int = None, **params
+    ) -> Optional[Dict]:
         """
         Lấy dữ liệu từ MISA CRM endpoint
-        
+
         Args:
             endpoint_name: Tên endpoint ('customers', 'sale_orders', etc.)
             page: Số trang (bắt đầu từ 0)
             page_size: Số bản ghi trên trang
             **params: Tham số bổ sung
-            
+
         Returns:
             Dữ liệu response hoặc None nếu thất bại
         """
         if endpoint_name not in self.endpoints:
             logger.error(f"Endpoint không hợp lệ: {endpoint_name}")
             return None
-        
+
         if page_size is None:
             page_size = settings.misa_crm_page_size
-        
+
         url = f"{self.base_url}{self.endpoints[endpoint_name]}"
-        
+
         # Setup parameters
         request_params = {
             "page": page,
-            "pageSize": min(page_size, settings.misa_crm_max_page_size)
+            "pageSize": min(page_size, settings.misa_crm_max_page_size),
         }
         request_params.update(params)
-        
+
         # Xử lý đặc biệt cho stocks (không có phân trang)
-        if endpoint_name == 'stocks':
+        if endpoint_name == "stocks":
             request_params = {}
-        
-        logger.debug(f"Đang yêu cầu dữ liệu {endpoint_name} (trang {page}, kích thước {page_size})")
-        
-        response = self._make_request_with_retry('GET', url, params=request_params)
-        
+
+        logger.debug(
+            f"Đang yêu cầu dữ liệu {endpoint_name} (trang {page}, kích thước {page_size})"
+        )
+
+        response = self._make_request_with_retry("GET", url, params=request_params)
+
         if response:
             result = response.json()
             logger.debug(f"Lấy dữ liệu {endpoint_name} thành công")
@@ -313,8 +350,10 @@ class MISACRMExtractor:
         else:
             logger.error(f"Thất bại khi lấy dữ liệu {endpoint_name}")
             return None
-    
-    def extract_all_data_from_endpoint(self, endpoint_name: str, max_pages: int = 50000) -> List[Dict]:
+
+    def extract_all_data_from_endpoint(
+        self, endpoint_name: str, max_pages: int = 50000
+    ) -> List[Dict]:
         """
         Lấy tất cả dữ liệu từ một endpoint, xử lý phân trang tự động.
 
@@ -327,52 +366,86 @@ class MISACRMExtractor:
         """
         all_records = []
         page_index = 0
-        page_size = 100 # Sử dụng page size tối đa được phép
+        page_size = 100  # Sử dụng page size tối đa được phép
 
-        logger.info(f"Bắt đầu trích xuất toàn bộ dữ liệu từ endpoint: '{endpoint_name}'")
+        logger.info(
+            f"Bắt đầu trích xuất toàn bộ dữ liệu từ endpoint: '{endpoint_name}'"
+        )
 
         # Xử lý trường hợp đặc biệt cho 'stocks' không có phân trang
-        if endpoint_name == 'stocks':
+        if endpoint_name == "stocks":
             result = self.extract_endpoint_data(endpoint_name)
-            if result and result.get('success') and isinstance(result.get('data'), list):
-                all_records = result['data']
-                logger.info(f"Trích xuất thành công {len(all_records)} bản ghi từ endpoint 'stocks'.")
+            if (
+                result
+                and result.get("success")
+                and isinstance(result.get("data"), list)
+            ):
+                all_records = result["data"]
+                logger.info(
+                    f"Trích xuất thành công {len(all_records)} bản ghi từ endpoint 'stocks'."
+                )
             else:
-                logger.error(f"Trích xuất từ endpoint 'stocks' thất bại hoặc không có dữ liệu.")
+                logger.error(
+                    f"Trích xuất từ endpoint 'stocks' thất bại hoặc không có dữ liệu."
+                )
             return all_records
 
         # Vòng lặp xử lý phân trang cho các endpoint khác
         while page_index < max_pages:
-            logger.info(f"Đang lấy dữ liệu từ trang {page_index} của endpoint '{endpoint_name}'...")
-            result = self.extract_endpoint_data(endpoint_name, page=page_index, page_size=page_size)
+            logger.info(
+                f"Đang lấy dữ liệu từ trang {page_index} của endpoint '{endpoint_name}'..."
+            )
+            result = self.extract_endpoint_data(
+                endpoint_name, page=page_index, page_size=page_size
+            )
 
-            if not result or not result.get('success') or not isinstance(result.get('data'), list):
-                logger.error(f"Yêu cầu đến trang {page_index} của '{endpoint_name}' thất bại hoặc không có dữ liệu.")
+            if (
+                not result
+                or not result.get("success")
+                or not isinstance(result.get("data"), list)
+            ):
+                logger.error(
+                    f"Yêu cầu đến trang {page_index} của '{endpoint_name}' thất bại hoặc không có dữ liệu."
+                )
                 break
 
-            batch_data = result['data']
+            batch_data = result["data"]
             if not batch_data:
-                logger.info(f"Không còn dữ liệu ở trang {page_index}. Kết thúc trích xuất cho '{endpoint_name}'.")
+                logger.info(
+                    f"Không còn dữ liệu ở trang {page_index}. Kết thúc trích xuất cho '{endpoint_name}'."
+                )
                 break
 
             all_records.extend(batch_data)
-            logger.info(f"Đã lấy {len(batch_data)} bản ghi từ trang {page_index}. Tổng số bản ghi hiện tại: {len(all_records)}.")
+            logger.info(
+                f"Đã lấy {len(batch_data)} bản ghi từ trang {page_index}. Tổng số bản ghi hiện tại: {len(all_records)}."
+            )
 
             # Nếu số lượng bản ghi trả về ít hơn page_size, đây là trang cuối cùng
             if len(batch_data) < page_size:
-                logger.info(f"Đã đến trang cuối cùng. Kết thúc trích xuất cho '{endpoint_name}'.")
+                logger.info(
+                    f"Đã đến trang cuối cùng. Kết thúc trích xuất cho '{endpoint_name}'."
+                )
                 break
 
             page_index += 1
-            time.sleep(settings.api_retry_delay / 10)  # Thêm một khoảng nghỉ nhỏ giữa các request
+            time.sleep(
+                settings.api_retry_delay / 10
+            )  # Thêm một khoảng nghỉ nhỏ giữa các request
 
         if page_index >= max_pages:
-            logger.warning(f"Đã đạt giới hạn {max_pages} trang. Dừng trích xuất cho '{endpoint_name}'.")
+            logger.warning(
+                f"Đã đạt giới hạn {max_pages} trang. Dừng trích xuất cho '{endpoint_name}'."
+            )
 
-        logger.info(f"Hoàn thành trích xuất cho '{endpoint_name}'. Tổng cộng {len(all_records)} bản ghi.")
+        logger.info(
+            f"Hoàn thành trích xuất cho '{endpoint_name}'. Tổng cộng {len(all_records)} bản ghi."
+        )
         return all_records
-    
-    def extract_incremental_data(self, endpoint_name: str, lookback_hours: int = None) -> List[Dict]:
+
+    def extract_incremental_data(
+        self, endpoint_name: str, lookback_hours: int = None
+    ) -> List[Dict]:
         """
         Lấy dữ liệu incremental (chỉ dữ liệu mới/thay đổi)
 
@@ -386,7 +459,9 @@ class MISACRMExtractor:
         if lookback_hours is None:
             lookback_hours = settings.misa_crm_incremental_lookback_hours
 
-        logger.info(f"Lấy dữ liệu incremental từ {endpoint_name} (lookback: {lookback_hours} giờ)")
+        logger.info(
+            f"Lấy dữ liệu incremental từ {endpoint_name} (lookback: {lookback_hours} giờ)"
+        )
 
         # TODO: Cải thiện - thay vì lấy tất cả dữ liệu rồi filter, nên filter ngay ở API level
         # Hiện tại vẫn phải lấy tất cả dữ liệu (với giới hạn trang để tránh quá tải)
@@ -400,10 +475,12 @@ class MISACRMExtractor:
         filtered_data = []
 
         for record in all_data:
-            modified_date_str = record.get('modified_date')
+            modified_date_str = record.get("modified_date")
             if modified_date_str:
                 try:
-                    modified_date = datetime.fromisoformat(modified_date_str.replace('Z', '+00:00'))
+                    modified_date = datetime.fromisoformat(
+                        modified_date_str.replace("Z", "+00:00")
+                    )
                     if modified_date >= cutoff_time:
                         filtered_data.append(record)
                 except:
@@ -415,7 +492,7 @@ class MISACRMExtractor:
 
         logger.info(f"Lọc incremental: {len(filtered_data)}/{len(all_data)} records")
         return filtered_data
-    
+
     def health_check(self) -> Dict[str, Any]:
         """
         Thực hiện health check trên MISA CRM API
@@ -424,43 +501,53 @@ class MISACRMExtractor:
             Kết quả health check
         """
         health_status = {
-            'timestamp': datetime.now().isoformat(),
-            'token_status': 'unknown',
-            'endpoints_status': {},
-            'overall_status': 'unknown'
+            "timestamp": datetime.now().isoformat(),
+            "token_status": "unknown",
+            "endpoints_status": {},
+            "overall_status": "unknown",
         }
 
         try:
             # Kiểm tra token
             token = self.get_access_token()
             if token:
-                health_status['token_status'] = 'healthy'
-                health_status['token_expires_at'] = self.token_expires_at.isoformat() if self.token_expires_at else None
+                health_status["token_status"] = "healthy"
+                health_status["token_expires_at"] = (
+                    self.token_expires_at.isoformat() if self.token_expires_at else None
+                )
             else:
-                health_status['token_status'] = 'unhealthy'
-                health_status['overall_status'] = 'unhealthy'
+                health_status["token_status"] = "unhealthy"
+                health_status["overall_status"] = "unhealthy"
                 return health_status
 
             # Kiểm tra từng endpoint
             for endpoint_name in self.endpoints.keys():
                 try:
-                    result = self.extract_endpoint_data(endpoint_name, page=0, page_size=1)
-                    if result and 'data' in result:
-                        health_status['endpoints_status'][endpoint_name] = 'healthy'
+                    result = self.extract_endpoint_data(
+                        endpoint_name, page=0, page_size=1
+                    )
+                    if result and "data" in result:
+                        health_status["endpoints_status"][endpoint_name] = "healthy"
                     else:
-                        health_status['endpoints_status'][endpoint_name] = 'unhealthy'
+                        health_status["endpoints_status"][endpoint_name] = "unhealthy"
                 except Exception as e:
-                    health_status['endpoints_status'][endpoint_name] = f'error: {str(e)}'
+                    health_status["endpoints_status"][
+                        endpoint_name
+                    ] = f"error: {str(e)}"
 
             # Trạng thái tổng thể
-            unhealthy_endpoints = [k for k, v in health_status['endpoints_status'].items() if v != 'healthy']
+            unhealthy_endpoints = [
+                k
+                for k, v in health_status["endpoints_status"].items()
+                if v != "healthy"
+            ]
             if not unhealthy_endpoints:
-                health_status['overall_status'] = 'healthy'
+                health_status["overall_status"] = "healthy"
             else:
-                health_status['overall_status'] = f'degraded: {unhealthy_endpoints}'
+                health_status["overall_status"] = f"degraded: {unhealthy_endpoints}"
 
         except Exception as e:
-            health_status['overall_status'] = f'error: {str(e)}'
+            health_status["overall_status"] = f"error: {str(e)}"
 
         logger.info(f"Health check hoàn thành: {health_status['overall_status']}")
         return health_status
