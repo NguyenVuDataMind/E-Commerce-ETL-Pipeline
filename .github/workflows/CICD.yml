@@ -392,12 +392,12 @@ jobs:
           
           # Stop existing containers
           echo 'Stopping existing containers...'
-          docker-compose down || true
+          docker compose down || true
           
           # Pull latest images và build
           echo 'Building và starting containers...'
-          docker-compose build --no-cache
-          docker-compose up -d
+          docker compose build --no-cache
+          docker compose up -d
           
           # Wait for services to be ready
           echo 'Waiting for services to be ready...'
@@ -405,7 +405,7 @@ jobs:
           
           # Check container status
           echo 'Checking container status...'
-          docker-compose ps
+          docker compose ps
           
           # Check Airflow webserver health
           echo 'Checking Airflow webserver health...'
@@ -420,7 +420,7 @@ jobs:
           
           # Check if all containers are running
           echo 'Container status:'
-          docker-compose ps
+          docker compose ps
           
           # Wait for Airflow to be ready
           echo 'Waiting for Airflow to be ready...'
@@ -432,15 +432,15 @@ jobs:
           
           # Check Airflow DAGs
           echo 'Checking Airflow DAGs...'
-          docker-compose exec -T airflow-webserver airflow dags list || echo 'Không thể list DAGs'
+          docker compose exec -T airflow-webserver airflow dags list || echo 'Không thể list DAGs'
           
           # Check database connections
           echo 'Checking database connections...'
-          docker-compose exec -T airflow-webserver airflow connections list || echo 'Không thể list connections'
+          docker compose exec -T airflow-webserver airflow connections list || echo 'Không thể list connections'
           
           # Check logs for any errors
           echo 'Checking recent logs...'
-          docker-compose logs --tail=50 airflow-webserver
+          docker compose logs --tail=50 airflow-webserver
         "
         
     - name: Cleanup SSH key
