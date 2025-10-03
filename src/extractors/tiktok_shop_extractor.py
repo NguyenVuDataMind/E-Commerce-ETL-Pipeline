@@ -709,12 +709,14 @@ class TikTokShopOrderExtractor:
             self.logger.error(f"❌ Critical error in streaming: {str(e)}")
             raise
 
-            logger.info(f"🚀 Bắt đầu full historical extraction:")
-            logger.info(
+            self.logger.info(f"🚀 Bắt đầu full historical extraction:")
+            self.logger.info(
                 f"   📅 Từ: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}"
             )
-            logger.info(f"   📅 Đến: {end_date.strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info(f"   📦 Batch size: {batch_size}")
+            self.logger.info(
+                f"   📅 Đến: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            self.logger.info(f"   📦 Batch size: {batch_size}")
 
             # Stream orders từ start_time đến end_time
             yield from self.stream_orders_lightweight(
@@ -722,5 +724,5 @@ class TikTokShopOrderExtractor:
             )
 
         except Exception as e:
-            logger.error(f"Error in stream_all_historical_orders: {str(e)}")
+            self.logger.error(f"Error in stream_all_historical_orders: {str(e)}")
             raise

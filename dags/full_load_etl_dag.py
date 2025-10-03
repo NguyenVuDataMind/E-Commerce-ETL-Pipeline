@@ -71,7 +71,6 @@ def transform_misa_crm_data(**context):
         # Clear raw data from memory immediately after transformation
         del raw_data
         del transformer
-        del raw_data
         import gc
 
         gc.collect()
