@@ -17,6 +17,12 @@ jobs:
   # Job 1: Test DAGs và Code Quality
   test-dags:
     runs-on: ubuntu-latest
+    env:
+      # Biến môi trường tối thiểu để tránh cảnh báo khi import settings trong CI
+      SQL_SERVER_PASSWORD: "test"
+      SQL_SERVER_DATABASE: "FacolosEnterpriseDW"
+      TIKTOK_APP_SECRET: "test"
+      TIKTOK_ACCESS_TOKEN: "test"
     
     steps:
     - name: Checkout code
