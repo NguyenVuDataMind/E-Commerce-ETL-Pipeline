@@ -9,8 +9,9 @@ on:
 env:
   PYTHON_VERSION: '3.9'
   AIRFLOW_VERSION: '2.7.0'
-  VM_HOST: '103.141.145.20'
-  VM_USER: 'facolos'
+  VM_HOST: ${{ secrets.VM_HOST }}
+  VM_USER: ${{ secrets.VM_USER }}
+  DEPLOY_ETL_FACOLOS_SECRET: ${{ secrets.DEPLOY_ETL_FACOLOS_SECRET }}
 
 jobs:
   # Job 1: Test DAGs và Code Quality
@@ -351,7 +352,6 @@ jobs:
           --exclude='.git' \
           --exclude='__pycache__' \
           --exclude='*.pyc' \
-          --exclude='.env' \
           ./ ${{ env.VM_USER }}@${{ env.VM_HOST }}:/home/${{ env.VM_USER }}/facolos-data-pipelines/
           
     - name: Setup environment trên VM
@@ -372,24 +372,6 @@ jobs:
           fi
           
           echo 'Docker và Docker Compose đã sẵn sàng'
-          
-          # Tạo file .env mẫu nếu chưa có
-          if [ ! -f .env ]; then
-            echo 'Tạo file .env mẫu...'
-            cat > .env << 'EOF'
-# SQL Server Configuration
-SQL_SERVER_PASSWORD=YourStrongPassword123!
-SQL_SERVER_DATABASE=FacolosEnterpriseDW
-
-# Airflow Configuration
-_AIRFLOW_WWW_USER_USERNAME=admin
-_AIRFLOW_WWW_USER_PASSWORD=facolos2024
-
-# ETL Configuration
-ETL_INCREMENTAL_LOOKBACK_MINUTES=15
-EOF
-            echo 'File .env mẫu đã được tạo. Vui lòng cập nhật các giá trị phù hợp.'
-          fi
         "
         
     - name: Deploy với Docker Compose
