@@ -325,12 +325,16 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Setup SSH key
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_ETL_FACOLOS_SECRET }}
       run: |
         echo "Setting up SSH key..."
         mkdir -p ~/.ssh
-        echo "${{ secrets.DEPLOY_ETL_FACOLOS_SECRET }}" > ~/.ssh/id_rsa
+        echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H ${{ env.VM_HOST }} >> ~/.ssh/known_hosts
+        eval "$(ssh-agent -s)"
+        ssh-add ~/.ssh/id_rsa
+        ssh-keyscan -p 22 -H ${{ env.VM_HOST }} >> ~/.ssh/known_hosts || true
         
     - name: Test SSH connection
       run: |
