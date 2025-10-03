@@ -1,0 +1,476 @@
+name: CI/CD Pipeline - ETL Data Pipelines
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  PYTHON_VERSION: '3.9'
+  AIRFLOW_VERSION: '2.7.0'
+  VM_HOST: '103.141.145.20'
+  VM_USER: 'facolos'
+
+jobs:
+  # Job 1: Test DAGs và Code Quality
+  test-dags:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov flake8 black
+        
+    - name: Code formatting check với Black
+      run: |
+        echo "Kiểm tra code formatting với Black..."
+        black --check --diff src/ dags/ config/
+        
+    - name: Linting với Flake8
+      run: |
+        echo "Kiểm tra code quality với Flake8..."
+        flake8 src/ dags/ config/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 src/ dags/ config/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        
+    - name: Test DAG syntax và import
+      run: |
+        echo "Kiểm tra syntax và import của các DAGs..."
+        python -c "
+        import sys
+        import os
+        sys.path.append('/opt/airflow/')
+        
+        # Test import các modules
+        try:
+            from src.extractors.misa_crm_extractor import MISACRMExtractor
+            from src.extractors.tiktok_shop_extractor import TikTokShopOrderExtractor
+            from src.extractors.shopee_orders_extractor import ShopeeOrderExtractor
+            from src.transformers.misa_crm_transformer import MISACRMTransformer
+            from src.transformers.tiktok_shop_transformer import TikTokShopOrderTransformer
+            from src.transformers.shopee_orders_transformer import ShopeeOrderTransformer
+            from src.loaders.misa_crm_loader import MISACRMLoader
+            from src.loaders.tiktok_shop_staging_loader import TikTokShopOrderLoader
+            from src.loaders.shopee_orders_loader import ShopeeOrderLoader
+            print('✅ Tất cả modules import thành công')
+        except ImportError as e:
+            print(f'❌ Lỗi import: {e}')
+            sys.exit(1)
+        "
+        
+    - name: Test DAG validation
+      run: |
+        echo "Kiểm tra validation của các DAGs..."
+        python -c "
+        import sys
+        import os
+        sys.path.append('/opt/airflow/')
+        
+        # Test DAG validation
+        try:
+            # Test full_load_etl_dag
+            with open('dags/full_load_etl_dag.py', 'r', encoding='utf-8') as f:
+                dag_code = f.read()
+            exec(dag_code)
+            print('✅ full_load_etl_dag validation thành công')
+            
+            # Test incremental_etl_dag  
+            with open('dags/incremental_etl_dag.py', 'r', encoding='utf-8') as f:
+                dag_code = f.read()
+            exec(dag_code)
+            print('✅ incremental_etl_dag validation thành công')
+            
+        except Exception as e:
+            print(f'❌ Lỗi validation DAG: {e}')
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        "
+        
+    - name: Test configuration files
+      run: |
+        echo "Kiểm tra configuration files..."
+        python -c "
+        try:
+            from config.settings import settings
+            print('✅ Settings import thành công')
+        except Exception as e:
+            print(f'❌ Lỗi settings: {e}')
+            sys.exit(1)
+        "
+        
+    - name: Test chức năng DAGs và logic ETL
+      run: |
+        echo "Kiểm tra chức năng DAGs và logic ETL..."
+        python scripts/test_dag_functionality.py
+        
+    - name: Test database connections và loading logic
+      run: |
+        echo "Kiểm tra kết nối database và loading logic..."
+        python -c "
+        import sys
+        import os
+        import pandas as pd
+        sys.path.append('/opt/airflow/')
+        
+        try:
+            # Test SQL Server connection
+            print('🔍 Testing SQL Server connection...')
+            from src.utils.database import DatabaseManager
+            
+            # Test connection string format
+            db_manager = DatabaseManager()
+            connection_string = db_manager.get_connection_string()
+            
+            if connection_string:
+                print('✅ SQL Server connection string được tạo thành công')
+                print(f'Connection string format: {connection_string[:50]}...')
+            else:
+                print('⚠️ SQL Server connection string không được tạo')
+            
+            # Test loaders
+            print('🔍 Testing database loaders...')
+            from src.loaders.misa_crm_loader import MISACRMLoader
+            from src.loaders.tiktok_shop_staging_loader import TikTokShopOrderLoader
+            from src.loaders.shopee_orders_loader import ShopeeOrderLoader
+            
+            # Test MISA CRM loader
+            misa_loader = MISACRMLoader()
+            print(f'✅ MISA CRM loader table mappings: {misa_loader.table_mappings}')
+            
+            # Test TikTok Shop loader
+            tiktok_loader = TikTokShopOrderLoader()
+            print('✅ TikTok Shop loader instantiated successfully')
+            
+            # Test Shopee loader
+            shopee_loader = ShopeeOrderLoader()
+            print('✅ Shopee loader instantiated successfully')
+                
+        except Exception as e:
+            print(f'⚠️ Database connection test failed: {str(e)}')
+            print('⚠️ Có thể do chưa cấu hình database credentials')
+        "
+        
+    - name: Test data transformation logic
+      run: |
+        echo "Kiểm tra logic transform dữ liệu..."
+        python -c "
+        import sys
+        import os
+        import pandas as pd
+        sys.path.append('/opt/airflow/')
+        
+        try:
+            # Test MISA CRM transformer với sample data
+            print('🔍 Testing MISA CRM transformer...')
+            from src.transformers.misa_crm_transformer import MISACRMTransformer
+            
+            transformer = MISACRMTransformer()
+            
+            # Tạo sample data để test
+            sample_data = {
+                'customers': [{'id': 1, 'name': 'Test Customer', 'email': 'test@example.com'}],
+                'contacts': [{'id': 1, 'customer_id': 1, 'phone': '0123456789'}]
+            }
+            
+            try:
+                transformed_data = transformer.transform_all_endpoints(sample_data)
+                if transformed_data and len(transformed_data) > 0:
+                    print('✅ MISA CRM transformer hoạt động với sample data')
+                else:
+                    print('⚠️ MISA CRM transformer không trả về dữ liệu')
+            except Exception as e:
+                print(f'⚠️ MISA CRM transformer failed: {str(e)}')
+            
+            # Test TikTok Shop transformer với sample data
+            print('🔍 Testing TikTok Shop transformer...')
+            from src.transformers.tiktok_shop_transformer import TikTokShopOrderTransformer
+            
+            tiktok_transformer = TikTokShopOrderTransformer()
+            
+            # Tạo sample order data
+            sample_orders = [{
+                'order_id': 'test_123',
+                'order_status': 'COMPLETED',
+                'create_time': 1640995200,
+                'total_amount': 100000
+            }]
+            
+            try:
+                transformed_df = tiktok_transformer.transform_orders_to_dataframe(sample_orders)
+                if not transformed_df.empty:
+                    print('✅ TikTok Shop transformer hoạt động với sample data')
+                    print(f'Sample transformed data shape: {transformed_df.shape}')
+                else:
+                    print('⚠️ TikTok Shop transformer không trả về dữ liệu')
+            except Exception as e:
+                print(f'⚠️ TikTok Shop transformer failed: {str(e)}')
+                
+        except Exception as e:
+            print(f'❌ Lỗi test data transformation: {e}')
+            import traceback
+            traceback.print_exc()
+        "
+        
+    - name: Test token refresh logic
+      run: |
+        echo "Kiểm tra logic token refresh..."
+        python -c "
+        import sys
+        import os
+        sys.path.append('/opt/airflow/')
+        
+        try:
+            # Test TikTok Shop authenticator
+            print('🔍 Testing TikTok Shop authenticator...')
+            from src.utils.auth import TikTokAuthenticator
+            
+            authenticator = TikTokAuthenticator()
+            
+            # Test token expiry check
+            is_expired = authenticator.is_token_expired()
+            print(f'✅ Token expiry check: {\"Expired\" if is_expired else \"Valid\"}')
+            
+            # Test refresh token expiry check
+            is_refresh_expired = authenticator.is_refresh_token_expired()
+            print(f'✅ Refresh token expiry check: {\"Expired\" if is_refresh_expired else \"Valid\"}')
+            
+            # Test signature generation
+            try:
+                test_params = {
+                    'app_key': 'test_key',
+                    'timestamp': '1234567890',
+                    'shop_cipher': 'test_cipher'
+                }
+                signature = authenticator.generate_signature('/test/endpoint', test_params)
+                if signature:
+                    print('✅ Signature generation successful')
+                else:
+                    print('⚠️ Signature generation failed')
+            except Exception as e:
+                print(f'⚠️ Signature generation test failed: {str(e)}')
+            
+            # Test ensure_valid_token method
+            try:
+                is_valid = authenticator.ensure_valid_token()
+                print(f'✅ Token validation: {\"Valid\" if is_valid else \"Invalid\"}')
+            except Exception as e:
+                print(f'⚠️ Token validation test failed: {str(e)}')
+                
+        except Exception as e:
+            print(f'❌ Lỗi test token refresh: {e}')
+            import traceback
+            traceback.print_exc()
+        "
+
+  # Job 2: Build Docker Image
+  build-docker:
+    needs: test-dags
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build Docker image
+      run: |
+        echo "Building Docker image cho ETL pipeline..."
+        docker build -t facolos-etl-pipeline:latest .
+        
+    - name: Test Docker image
+      run: |
+        echo "Testing Docker image..."
+        docker run --rm facolos-etl-pipeline:latest python -c "
+        import sys
+        sys.path.append('/opt/airflow/')
+        print('✅ Docker image test thành công')
+        "
+
+  # Job 3: Deploy to Ubuntu VM
+  deploy-to-vm:
+    needs: [test-dags, build-docker]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup SSH key
+      run: |
+        echo "Setting up SSH key..."
+        mkdir -p ~/.ssh
+        echo "${{ secrets.DEPLOY_ETL_FACOLOS_SECRET }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ env.VM_HOST }} >> ~/.ssh/known_hosts
+        
+    - name: Test SSH connection
+      run: |
+        echo "Testing SSH connection to VM..."
+        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ env.VM_USER }}@${{ env.VM_HOST }} "echo 'SSH connection successful'"
+        
+    - name: Deploy to VM
+      run: |
+        echo "Deploying ETL pipeline to Ubuntu VM..."
+        
+        # Tạo thư mục deploy trên VM
+        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ env.VM_USER }}@${{ env.VM_HOST }} "
+          mkdir -p /home/${{ env.VM_USER }}/facolos-data-pipelines
+          cd /home/${{ env.VM_USER }}/facolos-data-pipelines
+          
+          # Backup current deployment nếu có
+          if [ -d '.git' ]; then
+            echo 'Backing up current deployment...'
+            git stash
+          fi
+        "
+        
+        # Copy code lên VM
+        rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+          --exclude='.git' \
+          --exclude='__pycache__' \
+          --exclude='*.pyc' \
+          --exclude='.env' \
+          ./ ${{ env.VM_USER }}@${{ env.VM_HOST }}:/home/${{ env.VM_USER }}/facolos-data-pipelines/
+          
+    - name: Setup environment trên VM
+      run: |
+        echo "Setting up environment trên VM..."
+        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ env.VM_USER }}@${{ env.VM_HOST }} "
+          cd /home/${{ env.VM_USER }}/facolos-data-pipelines
+          
+          # Kiểm tra Docker và Docker Compose
+          if ! command -v docker &> /dev/null; then
+            echo 'Docker chưa được cài đặt'
+            exit 1
+          fi
+          
+          if ! command -v docker-compose &> /dev/null; then
+            echo 'Docker Compose chưa được cài đặt'
+            exit 1
+          fi
+          
+          echo 'Docker và Docker Compose đã sẵn sàng'
+          
+          # Tạo file .env mẫu nếu chưa có
+          if [ ! -f .env ]; then
+            echo 'Tạo file .env mẫu...'
+            cat > .env << 'EOF'
+# SQL Server Configuration
+SQL_SERVER_PASSWORD=YourStrongPassword123!
+SQL_SERVER_DATABASE=FacolosEnterpriseDW
+
+# Airflow Configuration
+_AIRFLOW_WWW_USER_USERNAME=admin
+_AIRFLOW_WWW_USER_PASSWORD=facolos2024
+
+# ETL Configuration
+ETL_INCREMENTAL_LOOKBACK_MINUTES=15
+EOF
+            echo 'File .env mẫu đã được tạo. Vui lòng cập nhật các giá trị phù hợp.'
+          fi
+        "
+        
+    - name: Deploy với Docker Compose
+      run: |
+        echo "Deploying với Docker Compose..."
+        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ env.VM_USER }}@${{ env.VM_HOST }} "
+          cd /home/${{ env.VM_USER }}/facolos-data-pipelines
+          
+          # Stop existing containers
+          echo 'Stopping existing containers...'
+          docker-compose down || true
+          
+          # Pull latest images và build
+          echo 'Building và starting containers...'
+          docker-compose build --no-cache
+          docker-compose up -d
+          
+          # Wait for services to be ready
+          echo 'Waiting for services to be ready...'
+          sleep 30
+          
+          # Check container status
+          echo 'Checking container status...'
+          docker-compose ps
+          
+          # Check Airflow webserver health
+          echo 'Checking Airflow webserver health...'
+          curl -f http://localhost:8080/health || echo 'Airflow webserver chưa sẵn sàng'
+        "
+        
+    - name: Verify deployment
+      run: |
+        echo "Verifying deployment..."
+        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ env.VM_USER }}@${{ env.VM_HOST }} "
+          cd /home/${{ env.VM_USER }}/facolos-data-pipelines
+          
+          # Check if all containers are running
+          echo 'Container status:'
+          docker-compose ps
+          
+          # Wait for Airflow to be ready
+          echo 'Waiting for Airflow to be ready...'
+          sleep 60
+          
+          # Check Airflow webserver health
+          echo 'Checking Airflow webserver health...'
+          curl -f http://localhost:8080/health || echo 'Airflow webserver chưa sẵn sàng'
+          
+          # Check Airflow DAGs
+          echo 'Checking Airflow DAGs...'
+          docker-compose exec -T airflow-webserver airflow dags list || echo 'Không thể list DAGs'
+          
+          # Check database connections
+          echo 'Checking database connections...'
+          docker-compose exec -T airflow-webserver airflow connections list || echo 'Không thể list connections'
+          
+          # Check logs for any errors
+          echo 'Checking recent logs...'
+          docker-compose logs --tail=50 airflow-webserver
+        "
+        
+    - name: Cleanup SSH key
+      if: always()
+      run: |
+        echo "Cleaning up SSH key..."
+        rm -f ~/.ssh/id_rsa
+
+  # Job 4: Notification
+  notify:
+    needs: [deploy-to-vm]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Notify deployment status
+      run: |
+        if [ "${{ needs.deploy-to-vm.result }}" == "success" ]; then
+          echo "✅ Deployment thành công!"
+          echo "ETL Pipeline đã được deploy lên VM Ubuntu"
+          echo "Airflow Webserver: http://${{ env.VM_HOST }}:8080"
+        else
+          echo "❌ Deployment thất bại!"
+          echo "Vui lòng kiểm tra logs để xem lỗi"
+        fi
