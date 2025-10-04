@@ -435,7 +435,7 @@ def load_shopee_orders_full_load(**context):
 
 # --- DAG Definition ---
 with DAG(
-    dag_id="full_load_etl_dag",
+    dag_id="full_load_etl_dag_test_1_month",
     default_args=default_args,
     description="Full Load ETL with 3-Task Structure - Extracts ALL historical data from earliest available date",
     schedule_interval=None,
