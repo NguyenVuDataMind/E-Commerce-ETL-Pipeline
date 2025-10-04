@@ -106,7 +106,7 @@ def load_misa_crm_data(**context):
     """Pulls transformed MISA CRM data from XComs and loads it."""
     logger = logging.getLogger(__name__)
     logger.info("Loading MISA CRM data...")
-    
+
     try:
         transformed_data_json = context["ti"].xcom_pull(
             key="misa_crm_transformed_data", task_ids="misa_crm_etl.transform"
@@ -119,14 +119,16 @@ def load_misa_crm_data(**context):
         }
 
         loader = MISACRMLoader()
-        loaded_counts = loader.load_all_data_to_staging(transformed_data, truncate_first=True)
-        
+        loaded_counts = loader.load_all_data_to_staging(
+            transformed_data, truncate_first=True
+        )
+
         # Log kết quả load
         total_loaded = sum(loaded_counts.values())
         logger.info(f"✅ MISA CRM load completed: {total_loaded} total records")
-        
+
         return f"Successfully loaded {total_loaded} records"
-        
+
     except Exception as e:
         logger.error(f"❌ MISA CRM load failed: {str(e)}")
         raise  # Re-raise để task fail

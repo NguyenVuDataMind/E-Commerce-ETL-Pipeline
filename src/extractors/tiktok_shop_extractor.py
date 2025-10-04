@@ -246,7 +246,9 @@ class TikTokShopOrderExtractor:
                                 f"Page {page_number}: Found {len(order_ids)} orders, total: {len(all_order_ids)}"
                             )
                             # Debug: Log page_size để kiểm tra
-                            self.logger.debug(f"Requested page_size: {page_size}, received: {len(order_ids)}")
+                            self.logger.debug(
+                                f"Requested page_size: {page_size}, received: {len(order_ids)}"
+                            )
 
                         # Check pagination theo TikTok Shop API response format
                         data_section = data.get("data", {})
@@ -260,7 +262,9 @@ class TikTokShopOrderExtractor:
 
                         # Check for more pages theo API spec
                         if not next_page_token:
-                            self.logger.info("No more pages available - pagination complete")
+                            self.logger.info(
+                                "No more pages available - pagination complete"
+                            )
                             break
 
                         # Continue to next page
@@ -564,7 +568,7 @@ class TikTokShopOrderExtractor:
     def get_fixed_start_date(self) -> datetime:
         """
         Trả về ngày bắt đầu cố định là 1/7/2024
-        
+
         Returns:
             Datetime cố định 1/7/2024
         """
