@@ -332,7 +332,9 @@ def extract_shopee_orders_full_load(**context):
 
         # Sử dụng trực tiếp ngày 1/7/2024 vì doanh nghiệp mở từ thời điểm đó
         start_date = datetime(2024, 7, 1)
-        logger.info(f"📅 Using fixed start date: {start_date.strftime('%Y-%m-%d')} (business started from this date)")
+        logger.info(
+            f"📅 Using fixed start date: {start_date.strftime('%Y-%m-%d')} (business started from this date)"
+        )
 
         end_date = datetime.now()
         start_timestamp = int(start_date.timestamp())

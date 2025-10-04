@@ -219,17 +219,19 @@ class MISACRMTransformer:
 
         # ✅ THÊM LOGIC XỬ LÝ BATCHES
         for i in range(0, len(sale_orders_data), batch_size):
-            batch_data = sale_orders_data[i:i + batch_size]
+            batch_data = sale_orders_data[i : i + batch_size]
             batch_number = (i // batch_size) + 1
-            
-            logger.debug(f"Processing batch {batch_number}/{total_batches} ({len(batch_data)} orders)")
-            
+
+            logger.debug(
+                f"Processing batch {batch_number}/{total_batches} ({len(batch_data)} orders)"
+            )
+
             # Transform batch
             batch_df = self._transform_sale_orders_batch(batch_data)
-            
+
             if not batch_df.empty:
                 processed_batches.append(batch_df)
-            
+
             # Memory cleanup after each batch
             del batch_data
             del batch_df

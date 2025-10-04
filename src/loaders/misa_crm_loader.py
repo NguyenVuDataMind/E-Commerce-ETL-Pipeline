@@ -82,6 +82,7 @@ class MISACRMLoader:
         try:
             # FIXED: Sử dụng pyodbc connection thay vì SQLAlchemy để tránh lỗi commit
             import pyodbc
+
             with pyodbc.connect(settings.pyodbc_connection_string) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"TRUNCATE TABLE {table_full_name}")
@@ -122,7 +123,7 @@ class MISACRMLoader:
         try:
             # FIXED: Sử dụng batch size nhỏ hơn để tránh parameter limit
             batch_size = min(500, settings.misa_crm_etl_batch_size)  # Giảm batch size
-            
+
             # Load data using pandas to_sql với batch size nhỏ hơn
             df.to_sql(
                 name=table_info["table"],
@@ -463,40 +464,40 @@ class MISACRMLoader:
     def _convert_value_for_sql(self, value):
         """
         Convert value để tương thích với SQL Server data types
-        
+
         Args:
             value: Giá trị cần convert
-            
+
         Returns:
             Giá trị đã được convert
         """
         if value is None or pd.isna(value):
             return None
-        
+
         # Convert datetime objects
         if isinstance(value, (pd.Timestamp, datetime)):
             return value
-        
+
         # Convert large integers to string để tránh overflow
         if isinstance(value, (int, np.integer)):
             if value > 2147483647 or value < -2147483648:  # SQL Server int range
                 return str(value)
             return int(value)
-        
+
         # Convert float to string nếu quá lớn
         if isinstance(value, (float, np.floating)):
             if abs(value) > 1e15:  # Very large float
                 return str(value)
             return float(value)
-        
+
         # Convert boolean
         if isinstance(value, bool):
             return value
-        
+
         # Convert string
         if isinstance(value, str):
             return value
-        
+
         # Default: convert to string
         return str(value)
 
