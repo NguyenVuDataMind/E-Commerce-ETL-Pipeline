@@ -444,59 +444,60 @@ class ShopeeOrderExtractor:
         # Shopee API giới hạn 15 ngày cho mỗi query
         max_days_per_chunk = 15
         all_orders = []
-        
+
         # Chia khoảng thời gian thành chunks 15 ngày
         current_start = start_date
         chunk_number = 1
-        
+
         while current_start < end_date:
             # Tính toán end date cho chunk này (không quá 15 ngày)
             chunk_end = min(
-                current_start + timedelta(days=max_days_per_chunk),
-                end_date
+                current_start + timedelta(days=max_days_per_chunk), end_date
             )
-            
+
             logger.info(
                 f"📦 Processing chunk {chunk_number}: {current_start.strftime('%Y-%m-%d')} to {chunk_end.strftime('%Y-%m-%d')}"
             )
-            
+
             try:
                 # Extract orders cho chunk này
                 chunk_orders = self._extract_orders_chunk(current_start, chunk_end)
                 all_orders.extend(chunk_orders)
-                
+
                 logger.info(
                     f"✅ Chunk {chunk_number} completed: {len(chunk_orders)} orders"
                 )
-                
+
             except Exception as e:
                 logger.error(f"❌ Error processing chunk {chunk_number}: {e}")
                 # Tiếp tục với chunk tiếp theo thay vì fail toàn bộ
-                
+
             # Chuyển sang chunk tiếp theo
             current_start = chunk_end
             chunk_number += 1
-            
+
             # Rate limiting giữa các chunks
             time.sleep(1)
-        
+
         logger.info(f"🎉 Full load extraction completed: {len(all_orders)} orders")
         return all_orders
 
-    def _extract_orders_chunk(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
+    def _extract_orders_chunk(
+        self, start_date: datetime, end_date: datetime
+    ) -> List[Dict[str, Any]]:
         """
         Extract orders cho một chunk thời gian (tối đa 15 ngày)
-        
+
         Args:
             start_date: Ngày bắt đầu chunk
             end_date: Ngày kết thúc chunk
-            
+
         Returns:
             List orders trong chunk này
         """
         start_timestamp = int(start_date.timestamp())
         end_timestamp = int(end_date.timestamp())
-        
+
         chunk_orders = []
         page_size = 100
         offset = 0

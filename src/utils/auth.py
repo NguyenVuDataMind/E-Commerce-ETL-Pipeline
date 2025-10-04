@@ -41,13 +41,17 @@ class TikTokAuthenticator:
         """Load the latest tokens from the database với retry logic và fallback."""
         max_retries = 3
         retry_delay = 5  # seconds
-        
+
         for attempt in range(max_retries):
             try:
-                logger.info(f"Attempting database connection (attempt {attempt + 1}/{max_retries})")
-                
+                logger.info(
+                    f"Attempting database connection (attempt {attempt + 1}/{max_retries})"
+                )
+
                 # Thêm timeout cho pyodbc connection
-                with pyodbc.connect(settings.pyodbc_connection_string, timeout=60) as conn:
+                with pyodbc.connect(
+                    settings.pyodbc_connection_string, timeout=60
+                ) as conn:
                     cursor = conn.cursor()
                     query = """
                         SELECT access_token, refresh_token, expires_at, shop_cipher
@@ -90,9 +94,7 @@ class TikTokAuthenticator:
                 logger.error(
                     f"An unexpected critical error occurred while loading tokens from database: {e}"
                 )
-                logger.warning(
-                    "Unexpected error, sử dụng tokens từ .env file"
-                )
+                logger.warning("Unexpected error, sử dụng tokens từ .env file")
                 self._load_tokens_from_env()
                 return
 

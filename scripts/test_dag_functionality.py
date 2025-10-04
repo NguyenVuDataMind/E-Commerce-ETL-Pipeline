@@ -68,6 +68,7 @@ def test_class_instantiation():
         from src.loaders.tiktok_shop_staging_loader import TikTokShopOrderLoader
         from src.loaders.shopee_orders_loader import ShopeeOrderLoader
         from src.utils.database import DatabaseManager
+
         # Test extractors (bỏ qua lỗi ODBC/DB trên CI)
         try:
             misa_extractor = MISACRMExtractor()
@@ -81,7 +82,9 @@ def test_class_instantiation():
             tiktok_extractor = TikTokShopOrderExtractor()
         except Exception as e:
             if "ODBC Driver 17" in str(e) or "unixODBC" in str(e) or "pyodbc" in str(e):
-                logger.warning("⚠️ Bỏ qua TikTokShopOrderExtractor do thiếu ODBC driver trên CI")
+                logger.warning(
+                    "⚠️ Bỏ qua TikTokShopOrderExtractor do thiếu ODBC driver trên CI"
+                )
                 tiktok_extractor = None
             else:
                 raise
@@ -89,7 +92,9 @@ def test_class_instantiation():
             shopee_extractor = ShopeeOrderExtractor()
         except Exception as e:
             if "ODBC Driver 17" in str(e) or "unixODBC" in str(e) or "pyodbc" in str(e):
-                logger.warning("⚠️ Bỏ qua ShopeeOrderExtractor do thiếu ODBC driver trên CI")
+                logger.warning(
+                    "⚠️ Bỏ qua ShopeeOrderExtractor do thiếu ODBC driver trên CI"
+                )
                 shopee_extractor = None
             else:
                 raise
@@ -341,7 +346,9 @@ def test_token_refresh_logic():
         except Exception as init_err:
             warn = str(init_err)
             if "ODBC Driver 17" in warn or "unixODBC" in warn or "pyodbc" in warn:
-                logger.warning("⚠️ Bỏ qua token refresh test trên CI do thiếu driver ODBC/DB")
+                logger.warning(
+                    "⚠️ Bỏ qua token refresh test trên CI do thiếu driver ODBC/DB"
+                )
                 return True
             raise
 
@@ -393,7 +400,8 @@ def test_dag_structure():
     logger.info("🔍 Testing DAG structure...")
     try:
         from airflow.models import DagBag
-        dag_bag = DagBag(dag_folder='dags', include_examples=False)
+
+        dag_bag = DagBag(dag_folder="dags", include_examples=False)
         if dag_bag.import_errors:
             logger.error(f"❌ DAG import errors: {dag_bag.import_errors}")
             return False
@@ -411,6 +419,7 @@ def test_dag_structure():
     except Exception as e:
         logger.error(f"❌ DAG structure test failed: {str(e)}")
         import traceback
+
         traceback.print_exc()
         return False
 
