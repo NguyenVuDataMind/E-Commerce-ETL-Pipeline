@@ -341,22 +341,59 @@ class ShopeeOrderExtractor:
         }
 
         try:
+            # DEBUG: Log request details
+            logger.debug(f"🔍 DEBUG: Getting order list from {time_from} to {time_to}")
+            logger.debug(f"🔍 DEBUG: Page size: {page_size}, Time field: {time_range_field}")
+            logger.debug(f"🔍 DEBUG: URL: {url}")
+            
             response = requests.get(url, params=params, timeout=self.api_timeout)
             data = response.json()
+
+            # DEBUG: Log response details
+            logger.debug(f"🔍 DEBUG: Response status: {response.status_code}")
+            logger.debug(f"🔍 DEBUG: Response data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
 
             if response.status_code != 200 or data.get("error"):
                 logger.error(
                     f"❌ Error getting order list: {data.get('error')} - {data.get('message')}"
                 )
+                logger.error(f"🔍 DEBUG: Full error response: {data}")
                 return None
 
+            # DEBUG: Check response structure
+            response_data = data.get('response', {})
+            order_list = response_data.get('order_list', [])
+            
+            logger.debug(f"🔍 DEBUG: Response structure - response: {bool(response_data)}, order_list: {len(order_list)}")
+            
+            if not order_list:
+                logger.warning(f"⚠️ WARNING: No order_list in response")
+                logger.warning(f"🔍 DEBUG: Full response: {data}")
+                return data  # Return empty response instead of None
+
             logger.info(
-                f"✅ Retrieved {len(data.get('response', {}).get('order_list', []))} orders"
+                f"✅ Retrieved {len(order_list)} orders"
             )
+            
+            # DEBUG: Log order IDs for verification
+            if order_list:
+                order_ids = [order.get('order_sn', 'NO_SN') for order in order_list[:3]]
+                logger.debug(f"🔍 DEBUG: First 3 order IDs: {order_ids}")
+            
             return data
 
         except requests.exceptions.RequestException as e:
             logger.error(f"❌ Request failed: {e}")
+            logger.error(f"🔍 DEBUG: Request URL: {url}")
+            logger.error(f"🔍 DEBUG: Request params: {params}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON decode failed: {e}")
+            logger.error(f"🔍 DEBUG: Response text: {response.text[:500]}...")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Unexpected error: {e}")
+            logger.error(f"🔍 DEBUG: Request details - URL: {url}, Time range: {time_from}-{time_to}")
             return None
 
     def get_order_detail(self, order_sn_list: List[str]) -> Optional[Dict[str, Any]]:
@@ -437,22 +474,62 @@ class ShopeeOrderExtractor:
         )
 
         try:
+            # DEBUG: Log request details
+            logger.debug(f"🔍 DEBUG: Requesting {len(order_sn_list)} orders")
+            logger.debug(f"🔍 DEBUG: First 3 order IDs: {order_sn_list[:3]}")
+            logger.debug(f"🔍 DEBUG: URL: {url}")
+            
             response = requests.get(url, params=params, timeout=self.api_timeout)
             data = response.json()
+
+            # DEBUG: Log response details
+            logger.debug(f"🔍 DEBUG: Response status: {response.status_code}")
+            logger.debug(f"🔍 DEBUG: Response data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
 
             if response.status_code != 200 or data.get("error"):
                 logger.error(
                     f"❌ Error getting order detail: {data.get('error')} - {data.get('message')}"
                 )
+                logger.error(f"🔍 DEBUG: Full error response: {data}")
+                return None
+
+            # DEBUG: Check response structure
+            response_data = data.get('response', {})
+            order_list = response_data.get('order_list', [])
+            
+            logger.debug(f"🔍 DEBUG: Response structure - response: {bool(response_data)}, order_list: {len(order_list)}")
+            
+            if not order_list:
+                logger.warning(f"⚠️ WARNING: No order_list in response for {len(order_sn_list)} orders")
+                logger.warning(f"🔍 DEBUG: Full response: {data}")
+                # Check if there's an error in response
+                if 'error' in response_data:
+                    logger.error(f"❌ Error in response: {response_data['error']}")
                 return None
 
             logger.info(
-                f"✅ Retrieved details for {len(data.get('response', {}).get('order_list', []))} orders"
+                f"✅ Retrieved details for {len(order_list)} orders"
             )
+            
+            # DEBUG: Log success details
+            if len(order_list) != len(order_sn_list):
+                logger.warning(f"⚠️ WARNING: Requested {len(order_sn_list)} orders but got {len(order_list)} details")
+                logger.warning(f"🔍 DEBUG: Missing orders - requested: {len(order_sn_list)}, received: {len(order_list)}")
+            
             return data
 
         except requests.exceptions.RequestException as e:
             logger.error(f"❌ Request failed: {e}")
+            logger.error(f"🔍 DEBUG: Request URL: {url}")
+            logger.error(f"🔍 DEBUG: Request params: {params}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON decode failed: {e}")
+            logger.error(f"🔍 DEBUG: Response text: {response.text[:500]}...")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Unexpected error: {e}")
+            logger.error(f"🔍 DEBUG: Request details - URL: {url}, Orders: {len(order_sn_list)}")
             return None
 
     def extract_orders_full_load(

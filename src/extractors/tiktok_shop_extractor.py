@@ -245,22 +245,22 @@ class TikTokShopOrderExtractor:
                             self.logger.info(
                                 f"Page {page_number}: Found {len(order_ids)} orders, total: {len(all_order_ids)}"
                             )
+                            # Debug: Log page_size để kiểm tra
+                            self.logger.debug(f"Requested page_size: {page_size}, received: {len(order_ids)}")
 
                         # Check pagination theo TikTok Shop API response format
                         data_section = data.get("data", {})
                         next_page_token = data_section.get("next_page_token", "")
                         total_count = data_section.get("total_count", 0)
 
-                        # Log pagination status chỉ khi DEBUG level
-                        if self.logger.level <= logging.DEBUG:
-                            self.logger.debug(
-                                f"Pagination info - next_page_token: '{next_page_token}', total: {total_count}"
-                            )
+                        # Log pagination status để debug
+                        self.logger.info(
+                            f"Pagination info - next_page_token: '{next_page_token}', total: {total_count}"
+                        )
 
                         # Check for more pages theo API spec
                         if not next_page_token:
-                            if self.logger.level <= logging.DEBUG:
-                                self.logger.debug("No more pages available")
+                            self.logger.info("No more pages available - pagination complete")
                             break
 
                         # Continue to next page
@@ -561,76 +561,16 @@ class TikTokShopOrderExtractor:
             logger.error(f"✗ Kiểm tra kết nối API thất bại: {str(e)}")
             return False
 
-    def find_earliest_order_date(
-        self, max_lookback_years: int = 2
-    ) -> Optional[datetime]:
+    def get_fixed_start_date(self) -> datetime:
         """
-        Tự động tìm ngày đơn hàng đầu tiên trong hệ thống
-
-        Args:
-            max_lookback_years: Số năm tối đa để tìm kiếm ngược (mặc định 2 năm)
-
+        Trả về ngày bắt đầu cố định là 1/7/2024
+        
         Returns:
-            Datetime của đơn hàng đầu tiên hoặc None nếu không tìm thấy
+            Datetime cố định 1/7/2024
         """
-        try:
-            logger.info(
-                f"Searching earliest order in last {max_lookback_years} years..."
-            )
-
-            # Bắt đầu từ hiện tại và tìm ngược
-            end_date = datetime.now()
-            earliest_found = None
-
-            # Test các khoảng thời gian khác nhau (giới hạn 2 năm = 730 ngày)
-            test_periods = [30, 90, 180, 365, 730]  # days
-
-            for days_back in test_periods:
-                start_date = end_date - timedelta(days=days_back)
-                start_timestamp = int(start_date.timestamp())
-                end_timestamp = int(end_date.timestamp())
-
-                # Log gọn hơn
-                logger.info(
-                    f"Testing: {start_date.strftime('%Y-%m-%d')} ({days_back} days back)"
-                )
-
-                try:
-                    # Tìm 1 order trong khoảng này với timeout ngắn
-                    order_ids = self.search_orders_for_ids(
-                        start_timestamp, end_timestamp, page_size=1
-                    )
-
-                    if order_ids:
-                        logger.info(
-                            f"✓ Found data from {start_date.strftime('%Y-%m-%d')}"
-                        )
-                        earliest_found = start_date
-                        # Tiếp tục tìm để kiểm tra period dài hơn
-                    else:
-                        logger.info(f"✗ No data from {start_date.strftime('%Y-%m-%d')}")
-                        break
-
-                except Exception as e:
-                    logger.warning(f"Error checking {days_back} days: {str(e)}")
-                    # Nếu lỗi quá nhiều lần, dừng lại và dùng fallback
-                    if days_back <= 90:  # Nếu lỗi ngay từ 90 ngày trở lại
-                        logger.warning("Too many errors, using fallback date")
-                        break
-                    continue
-
-            if earliest_found:
-                logger.info(
-                    f"🎯 Earliest date found: {earliest_found.strftime('%Y-%m-%d')}"
-                )
-                return earliest_found
-            else:
-                logger.warning("No orders found in search range")
-                return None
-
-        except Exception as e:
-            logger.error(f"Error finding earliest order date: {str(e)}")
-            return None
+        fixed_date = datetime(2024, 7, 1)
+        logger.info(f"Using fixed start date: {fixed_date.strftime('%Y-%m-%d')}")
+        return fixed_date
 
     def stream_orders_lightweight(
         self, start_time: int, end_time: int, batch_size: int = 20
@@ -657,7 +597,7 @@ class TikTokShopOrderExtractor:
             self.logger.info("📋 Phase 1: Getting all order IDs...")
             order_ids = self.search_orders_for_ids(
                 start_time, end_time, page_size=100
-            )  # FIXED: Tăng từ 50 lên 100
+            )  # Sử dụng page_size=100 để tối ưu hiệu suất
 
             if not order_ids:
                 self.logger.warning("⚠️ No orders found in the specified time range")
@@ -707,22 +647,4 @@ class TikTokShopOrderExtractor:
 
         except Exception as e:
             self.logger.error(f"❌ Critical error in streaming: {str(e)}")
-            raise
-
-            self.logger.info(f"🚀 Bắt đầu full historical extraction:")
-            self.logger.info(
-                f"   📅 Từ: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            self.logger.info(
-                f"   📅 Đến: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            self.logger.info(f"   📦 Batch size: {batch_size}")
-
-            # Stream orders từ start_time đến end_time
-            yield from self.stream_orders_lightweight(
-                start_time=start_time, end_time=end_time, batch_size=batch_size
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error in stream_all_historical_orders: {str(e)}")
             raise

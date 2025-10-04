@@ -142,7 +142,7 @@ def extract_tiktok_shop_full_load(**context):
         extractor = TikTokShopOrderExtractor()
 
         # Sử dụng ngày cố định 1/7/2024 thay vì auto-detect
-        start_date = datetime(2024, 7, 1)
+        start_date = datetime(2025, 9, 4)
         logger.info(f"📅 Using fixed start date: {start_date.strftime('%Y-%m-%d')}")
 
         end_date = datetime.now()
@@ -307,7 +307,7 @@ def extract_shopee_orders_full_load(**context):
         extractor = ShopeeOrderExtractor()
 
         # Sử dụng trực tiếp ngày 1/7/2024 vì doanh nghiệp mở từ thời điểm đó
-        start_date = datetime(2024, 7, 1)
+        start_date = datetime(2025, 9, 4)
         logger.info(
             f"📅 Using fixed start date: {start_date.strftime('%Y-%m-%d')} (business started from this date)"
         )

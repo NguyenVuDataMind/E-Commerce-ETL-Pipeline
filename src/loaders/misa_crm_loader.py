@@ -419,8 +419,8 @@ class MISACRMLoader:
             placeholders = ", ".join(["?" for _ in matching_columns])
             insert_sql = f"INSERT INTO {schema}.{table} ({', '.join(matching_columns)}) VALUES ({placeholders})"
 
-            # Insert data in batches
-            batch_size = 500  # FIXED: Giảm batch size để tránh parameter limit
+            # Insert data in batches - FIXED: Giảm batch size để tránh parameter limit
+            batch_size = min(100, len(df))  # Giảm batch size xuống 100 để tránh parameter limit
             total_inserted = 0
 
             for i in range(0, len(df), batch_size):
@@ -474,9 +474,28 @@ class MISACRMLoader:
         if value is None or pd.isna(value):
             return None
 
-        # Convert datetime objects
+        # Convert datetime objects - FIXED: Handle date conversion properly
         if isinstance(value, (pd.Timestamp, datetime)):
-            return value
+            # Ensure proper datetime format for SQL Server
+            if pd.isna(value):
+                return None
+            return value.strftime('%Y-%m-%d %H:%M:%S') if hasattr(value, 'strftime') else str(value)
+        
+        # Convert string dates to proper format
+        if isinstance(value, str):
+            try:
+                # Try to parse common date formats
+                if len(value) == 10 and '-' in value:  # YYYY-MM-DD format
+                    return value
+                elif len(value) == 19 and '-' in value and ':' in value:  # YYYY-MM-DD HH:MM:SS format
+                    return value
+                else:
+                    # Try to parse and reformat
+                    parsed_date = pd.to_datetime(value, errors='coerce')
+                    if not pd.isna(parsed_date):
+                        return parsed_date.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                pass
 
         # Convert large integers to string để tránh overflow
         if isinstance(value, (int, np.integer)):
@@ -546,8 +565,14 @@ class MISACRMLoader:
                 loaded_counts[endpoint] = 0
 
         total_loaded = sum(loaded_counts.values())
+        failed_endpoints = [endpoint for endpoint, count in loaded_counts.items() if count == 0 and not transformed_data[endpoint].empty]
+        
+        if failed_endpoints:
+            error_msg = f"Load thất bại cho các endpoints: {failed_endpoints}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        
         logger.info(f"Load hoàn thành: {total_loaded} tổng records")
-
         return loaded_counts
 
     def validate_loaded_data(self, loaded_counts: Dict[str, int]) -> Dict[str, Any]:
