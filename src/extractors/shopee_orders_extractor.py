@@ -428,6 +428,7 @@ class ShopeeOrderExtractor:
     ) -> List[Dict[str, Any]]:
         """
         Extract tất cả đơn hàng trong khoảng thời gian (Full Load)
+        Chia nhỏ thành chunks 15 ngày để tuân thủ Shopee API limit
 
         Args:
             start_date: Ngày bắt đầu
@@ -440,27 +441,80 @@ class ShopeeOrderExtractor:
             f"🚀 Starting Shopee full load extraction from {start_date} to {end_date}"
         )
 
+        # Shopee API giới hạn 15 ngày cho mỗi query
+        max_days_per_chunk = 15
+        all_orders = []
+        
+        # Chia khoảng thời gian thành chunks 15 ngày
+        current_start = start_date
+        chunk_number = 1
+        
+        while current_start < end_date:
+            # Tính toán end date cho chunk này (không quá 15 ngày)
+            chunk_end = min(
+                current_start + timedelta(days=max_days_per_chunk),
+                end_date
+            )
+            
+            logger.info(
+                f"📦 Processing chunk {chunk_number}: {current_start.strftime('%Y-%m-%d')} to {chunk_end.strftime('%Y-%m-%d')}"
+            )
+            
+            try:
+                # Extract orders cho chunk này
+                chunk_orders = self._extract_orders_chunk(current_start, chunk_end)
+                all_orders.extend(chunk_orders)
+                
+                logger.info(
+                    f"✅ Chunk {chunk_number} completed: {len(chunk_orders)} orders"
+                )
+                
+            except Exception as e:
+                logger.error(f"❌ Error processing chunk {chunk_number}: {e}")
+                # Tiếp tục với chunk tiếp theo thay vì fail toàn bộ
+                
+            # Chuyển sang chunk tiếp theo
+            current_start = chunk_end
+            chunk_number += 1
+            
+            # Rate limiting giữa các chunks
+            time.sleep(1)
+        
+        logger.info(f"🎉 Full load extraction completed: {len(all_orders)} orders")
+        return all_orders
+
+    def _extract_orders_chunk(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
+        """
+        Extract orders cho một chunk thời gian (tối đa 15 ngày)
+        
+        Args:
+            start_date: Ngày bắt đầu chunk
+            end_date: Ngày kết thúc chunk
+            
+        Returns:
+            List orders trong chunk này
+        """
         start_timestamp = int(start_date.timestamp())
         end_timestamp = int(end_date.timestamp())
-
-        all_orders = []
+        
+        chunk_orders = []
         page_size = 100
         offset = 0
 
         while True:
-            # Lấy danh sách order_sn
+            # Lấy danh sách order_sn cho chunk này
             order_list_response = self.get_order_list(
                 time_from=start_timestamp, time_to=end_timestamp, page_size=page_size
             )
 
             if not order_list_response:
-                logger.error("❌ Failed to get order list")
+                logger.error("❌ Failed to get order list for chunk")
                 break
 
             order_list = order_list_response.get("response", {}).get("order_list", [])
 
             if not order_list:
-                logger.info("📭 No more orders found")
+                logger.info("📭 No more orders found in chunk")
                 break
 
             # Lấy order_sn để gọi get_order_detail
@@ -476,9 +530,9 @@ class ShopeeOrderExtractor:
                     orders_detail = detail_response.get("response", {}).get(
                         "order_list", []
                     )
-                    all_orders.extend(orders_detail)
+                    chunk_orders.extend(orders_detail)
                     logger.info(
-                        f"✅ Processed {len(orders_detail)} orders (Total: {len(all_orders)})"
+                        f"✅ Processed {len(orders_detail)} orders in chunk (Chunk total: {len(chunk_orders)})"
                     )
                 else:
                     logger.warning("⚠️ Failed to get order details, skipping batch")
@@ -490,8 +544,7 @@ class ShopeeOrderExtractor:
             # Rate limiting
             time.sleep(0.5)
 
-        logger.info(f"🎉 Full load extraction completed: {len(all_orders)} orders")
-        return all_orders
+        return chunk_orders
 
     def extract_orders_incremental(
         self, minutes_back: int = 15

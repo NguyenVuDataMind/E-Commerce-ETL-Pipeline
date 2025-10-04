@@ -38,51 +38,74 @@ class TikTokAuthenticator:
         self._load_persistent_tokens()
 
     def _load_persistent_tokens(self):
-        """Load the latest tokens from the database."""
-        try:
-            with pyodbc.connect(settings.pyodbc_connection_string) as conn:
-                cursor = conn.cursor()
-                query = """
-                    SELECT access_token, refresh_token, expires_at, shop_cipher
-                    FROM etl_control.api_token_storage
-                    WHERE platform = 'tiktok_shop'
-                """
-                cursor.execute(query)
-                row = cursor.fetchone()
+        """Load the latest tokens from the database với retry logic và fallback."""
+        max_retries = 3
+        retry_delay = 5  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Attempting database connection (attempt {attempt + 1}/{max_retries})")
+                
+                # Thêm timeout cho pyodbc connection
+                with pyodbc.connect(settings.pyodbc_connection_string, timeout=60) as conn:
+                    cursor = conn.cursor()
+                    query = """
+                        SELECT access_token, refresh_token, expires_at, shop_cipher
+                        FROM etl_control.api_token_storage
+                        WHERE platform = 'tiktok_shop'
+                    """
+                    cursor.execute(query)
+                    row = cursor.fetchone()
 
-                if row:
-                    logger.info("Loaded TikTok Shop tokens from database.")
-                    self.access_token = row.access_token
-                    self.refresh_token = row.refresh_token
-                    self.access_token_expires_at = (
-                        row.expires_at.timestamp() if row.expires_at else None
+                    if row:
+                        logger.info("Loaded TikTok Shop tokens from database.")
+                        self.access_token = row.access_token
+                        self.refresh_token = row.refresh_token
+                        self.access_token_expires_at = (
+                            row.expires_at.timestamp() if row.expires_at else None
+                        )
+                        # Always use shop_cipher from .env (fixed value)
+                        self.shop_cipher = settings.tiktok_shop_cipher
+                        self.refresh_token_expires_at = (
+                            None  # This is no longer stored in the token table
+                        )
+                        return
+
+            except pyodbc.Error as e:
+                logger.warning(f"Database connection attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(
+                        f"CRITICAL: All {max_retries} database connection attempts failed: {e}"
                     )
-                    # Always use shop_cipher from .env (fixed value)
-                    self.shop_cipher = settings.tiktok_shop_cipher
-                    self.refresh_token_expires_at = (
-                        None  # This is no longer stored in the token table
+                    logger.warning(
+                        "Database không accessible, sử dụng tokens từ .env file"
                     )
+                    self._load_tokens_from_env()
                     return
-
-        except pyodbc.Error as e:
-            logger.error(
-                f"CRITICAL: pyodbc error when loading tokens from database: {e}"
-            )
-            logger.error(
-                "This is a fatal error. The application cannot proceed without database access for tokens."
-            )
-            raise  # Re-raise the exception to stop the process
-        except Exception as e:
-            logger.error(
-                f"An unexpected critical error occurred while loading tokens from database: {e}"
-            )
-            raise
+            except Exception as e:
+                logger.error(
+                    f"An unexpected critical error occurred while loading tokens from database: {e}"
+                )
+                logger.warning(
+                    "Unexpected error, sử dụng tokens từ .env file"
+                )
+                self._load_tokens_from_env()
+                return
 
         # If we reach here, it means DB connection was successful but no token was found.
         # This is a valid state, but we should log it and then proceed to load from .env as a fallback.
         logger.warning(
             "No TikTok Shop token found in the database. Falling back to .env file."
         )
+        self._load_tokens_from_env()
+
+    def _load_tokens_from_env(self):
+        """Load tokens từ .env file như fallback mechanism."""
+        logger.info("Loading TikTok Shop tokens from .env file")
         self.access_token = settings.tiktok_shop_access_token
         self.refresh_token = settings.tiktok_shop_refresh_token
         self.shop_cipher = settings.tiktok_shop_cipher

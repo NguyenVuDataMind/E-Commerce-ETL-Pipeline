@@ -54,6 +54,7 @@ def extract_misa_crm_data(**context):
 
 def transform_misa_crm_data(**context):
     """Transforms MISA CRM data."""
+    import gc  # Import gc ở đầu function
     logger = logging.getLogger(__name__)
     logger.info("Starting MISA CRM transformation...")
 
@@ -66,12 +67,16 @@ def transform_misa_crm_data(**context):
 
         # Process with memory management
         logger.info("Starting data transformation with memory optimization...")
-        transformed_data = transformer.transform_all_endpoints(raw_data)
+        
+        # Tạo batch_id từ execution date
+        execution_date = context["execution_date"]
+        batch_id = f"misa_crm_full_load_{execution_date.strftime('%Y%m%d_%H%M%S')}"
+        
+        transformed_data = transformer.transform_all_endpoints(raw_data, batch_id)
 
         # Clear raw data from memory immediately after transformation
         del raw_data
         del transformer
-        import gc
 
         gc.collect()
         logger.info("Post-transformation memory cleanup completed")

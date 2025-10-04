@@ -183,7 +183,7 @@ class Settings:
 
     @property
     def pyodbc_connection_string(self) -> str:
-        """Tạo SQL Server connection string cho pyodbc trực tiếp"""
+        """Tạo SQL Server connection string cho pyodbc trực tiếp với timeout settings"""
         driver = "ODBC Driver 17 for SQL Server"
         return (
             f"DRIVER={{{driver}}};"
@@ -192,6 +192,9 @@ class Settings:
             f"UID={self.sql_server_username};"
             f"PWD={self.sql_server_password};"
             f"TrustServerCertificate=yes;"
+            f"Connection Timeout=60;"
+            f"Command Timeout=60;"
+            f"Login Timeout=60;"
         )
 
     @property
