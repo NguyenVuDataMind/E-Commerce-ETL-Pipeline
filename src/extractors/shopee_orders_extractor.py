@@ -373,12 +373,36 @@ class ShopeeOrderExtractor:
             logger.error("❌ Cannot get order detail: no valid token")
             return None
 
-        if len(order_sn_list) > 50:
-            logger.warning(
-                f"⚠️ Order list too long ({len(order_sn_list)}), truncating to 50"
-            )
-            order_sn_list = order_sn_list[:50]
+        # Batch processing để không mất dữ liệu
+        if len(order_sn_list) <= 50:
+            # Xử lý trực tiếp nếu ≤ 50 orders
+            return self._get_order_detail_batch(order_sn_list)
+        
+        # Chia thành batches 50 orders để xử lý tất cả
+        logger.info(f"📦 Splitting {len(order_sn_list)} orders into batches of 50")
+        batches = [order_sn_list[i:i+50] for i in range(0, len(order_sn_list), 50)]
+        all_orders = []
+        
+        for batch_idx, batch in enumerate(batches):
+            logger.info(f"📦 Processing batch {batch_idx + 1}/{len(batches)}: {len(batch)} orders")
+            batch_result = self._get_order_detail_batch(batch)
+            if batch_result:
+                all_orders.extend(batch_result.get('response', {}).get('order_list', []))
+            time.sleep(0.5)  # Rate limiting giữa các batch
+        
+        logger.info(f"✅ Processed all {len(all_orders)} orders in {len(batches)} batches")
+        return {"response": {"order_list": all_orders}}
 
+    def _get_order_detail_batch(self, order_sn_list: List[str]) -> Optional[Dict[str, Any]]:
+        """
+        Gọi API get_order_detail cho một batch orders (≤ 50)
+        
+        Args:
+            order_sn_list: Danh sách order_sn (tối đa 50)
+            
+        Returns:
+            Response từ API hoặc None nếu lỗi
+        """
         path = "/api/v2/order/get_order_detail"
         timestamp = int(time.time())
         sign = self.create_signature(path, timestamp, self.access_token, self.shop_id)
@@ -400,7 +424,7 @@ class ShopeeOrderExtractor:
             "buyer_user_id,buyer_username,estimated_shipping_fee,recipient_address,actual_shipping_fee,"
             "goods_to_declare,note,note_update_time,item_list,pay_time,dropshipper,dropshipper_phone,split_up,"
             "buyer_cancel_reason,cancel_by,cancel_reason,actual_shipping_fee_confirmed,buyer_cpf_id,fulfillment_flag,"
-            "pickup_done_time,package_list,shipping_carrier,payment_method,total_amount,buyer_username,invoice_data,"
+            "pickup_done_time,package_list,shipping_carrier,payment_method,total_amount,invoice_data,"
             "order_chargeable_weight_gram,return_request_due_date,edt,payment_info"
         )
 
@@ -441,16 +465,16 @@ class ShopeeOrderExtractor:
             f"🚀 Starting Shopee full load extraction from {start_date} to {end_date}"
         )
 
-        # Shopee API giới hạn 15 ngày cho mỗi query
-        max_days_per_chunk = 15
+        # Shopee API giới hạn 10 ngày cho mỗi query (giảm từ 15 để tránh overload)
+        max_days_per_chunk = 10
         all_orders = []
 
-        # Chia khoảng thời gian thành chunks 15 ngày
+        # Chia khoảng thời gian thành chunks 10 ngày
         current_start = start_date
         chunk_number = 1
 
         while current_start < end_date:
-            # Tính toán end date cho chunk này (không quá 15 ngày)
+            # Tính toán end date cho chunk này (không quá 10 ngày)
             chunk_end = min(
                 current_start + timedelta(days=max_days_per_chunk), end_date
             )
@@ -486,7 +510,7 @@ class ShopeeOrderExtractor:
         self, start_date: datetime, end_date: datetime
     ) -> List[Dict[str, Any]]:
         """
-        Extract orders cho một chunk thời gian (tối đa 15 ngày)
+        Extract orders cho một chunk thời gian (tối đa 10 ngày)
 
         Args:
             start_date: Ngày bắt đầu chunk
@@ -495,6 +519,12 @@ class ShopeeOrderExtractor:
         Returns:
             List orders trong chunk này
         """
+        # Đảm bảo range không quá 10 ngày để tránh API error
+        days_diff = (end_date - start_date).days
+        if days_diff > 10:
+            logger.warning(f"⚠️ Chunk range too large ({days_diff} days), limiting to 10 days")
+            end_date = start_date + timedelta(days=10)
+        
         start_timestamp = int(start_date.timestamp())
         end_timestamp = int(end_date.timestamp())
 

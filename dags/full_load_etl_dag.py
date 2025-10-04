@@ -250,7 +250,8 @@ def transform_tiktok_shop_full_load(**context):
         logger.info(f"✅ Transformation complete: {len(transformed_df)} records")
 
         # Convert to dict for XCom (handle NaN values)
-        transformed_df_clean = transformed_df.fillna(None)
+        # FIXED: Sử dụng fillna với value cụ thể thay vì None
+        transformed_df_clean = transformed_df.fillna(value=None)
         transformed_data = transformed_df_clean.to_dict("records")
 
         # Push to XCom
@@ -329,43 +330,9 @@ def extract_shopee_orders_full_load(**context):
     try:
         extractor = ShopeeOrderExtractor()
 
-        # Auto-detect start date hoặc sử dụng fallback
-        start_date = None
-        try:
-            # Timeout protection
-            import threading
-            from queue import Queue
-
-            result_queue = Queue()
-
-            def auto_detect_worker():
-                try:
-                    earliest = extractor.find_earliest_order_date(max_lookback_years=2)
-                    result_queue.put(("success", earliest))
-                except Exception as e:
-                    result_queue.put(("error", str(e)))
-
-            worker_thread = threading.Thread(target=auto_detect_worker)
-            worker_thread.daemon = True
-            worker_thread.start()
-            worker_thread.join(timeout=30)  # 30 seconds timeout
-
-            if not result_queue.empty():
-                status, result = result_queue.get()
-                if status == "success" and result:
-                    start_date = result
-
-        except Exception as e:
-            logger.warning(f"Auto-detection failed: {str(e)}")
-
-        # Fallback to July 1, 2024 if auto-detection fails
-        if start_date is None:
-            start_date = datetime(2024, 7, 1)
-            logger.info(f"📅 Using fallback date: {start_date.strftime('%Y-%m-%d')}")
-        else:
-            logger.info(
-                f"✅ Auto-detected start date: {start_date.strftime('%Y-%m-%d')}"
-            )
+        # Sử dụng trực tiếp ngày 1/7/2024 vì doanh nghiệp mở từ thời điểm đó
+        start_date = datetime(2024, 7, 1)
+        logger.info(f"📅 Using fixed start date: {start_date.strftime('%Y-%m-%d')} (business started from this date)")
 
         end_date = datetime.now()
         start_timestamp = int(start_date.timestamp())

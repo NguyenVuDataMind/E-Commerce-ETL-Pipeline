@@ -217,6 +217,33 @@ class MISACRMTransformer:
         processed_batches = []
         total_batches = (len(sale_orders_data) + batch_size - 1) // batch_size
 
+        # ✅ THÊM LOGIC XỬ LÝ BATCHES
+        for i in range(0, len(sale_orders_data), batch_size):
+            batch_data = sale_orders_data[i:i + batch_size]
+            batch_number = (i // batch_size) + 1
+            
+            logger.debug(f"Processing batch {batch_number}/{total_batches} ({len(batch_data)} orders)")
+            
+            # Transform batch
+            batch_df = self._transform_sale_orders_batch(batch_data)
+            
+            if not batch_df.empty:
+                processed_batches.append(batch_df)
+            
+            # Memory cleanup after each batch
+            del batch_data
+            del batch_df
+            gc.collect()
+
+        # Combine all batches
+        if processed_batches:
+            final_df = pd.concat(processed_batches, ignore_index=True)
+            logger.info(f"Transform sale orders hoàn thành: {len(final_df)} records")
+            return final_df
+        else:
+            logger.warning("No batches processed successfully")
+            return pd.DataFrame()
+
     def _transform_sale_orders_batch(self, batch_data: List[Dict]) -> pd.DataFrame:
         """
         Transform một batch nhỏ sale orders - logic cũ được tách riêng

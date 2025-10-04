@@ -6,6 +6,7 @@ Tích hợp với TikTok Shop Infrastructure - Cấu trúc src/
 """
 
 import pandas as pd
+import numpy as np
 from sqlalchemy import create_engine, text
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -79,8 +80,11 @@ class MISACRMLoader:
         table_full_name = self.table_mappings[endpoint]
 
         try:
-            with self.db_engine.connect() as conn:
-                conn.execute(text(f"TRUNCATE TABLE {table_full_name}"))
+            # FIXED: Sử dụng pyodbc connection thay vì SQLAlchemy để tránh lỗi commit
+            import pyodbc
+            with pyodbc.connect(settings.pyodbc_connection_string) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"TRUNCATE TABLE {table_full_name}")
                 conn.commit()
 
             logger.info(f"Truncated table {table_full_name}")
@@ -116,7 +120,10 @@ class MISACRMLoader:
         table_info = self._get_table_info(table_full_name)
 
         try:
-            # Load data using pandas to_sql
+            # FIXED: Sử dụng batch size nhỏ hơn để tránh parameter limit
+            batch_size = min(500, settings.misa_crm_etl_batch_size)  # Giảm batch size
+            
+            # Load data using pandas to_sql với batch size nhỏ hơn
             df.to_sql(
                 name=table_info["table"],
                 con=self.db_engine,
@@ -124,7 +131,7 @@ class MISACRMLoader:
                 if_exists=if_exists,
                 index=False,
                 method="multi",
-                chunksize=settings.misa_crm_etl_batch_size,
+                chunksize=batch_size,  # FIXED: Batch size nhỏ hơn
             )
 
             logger.info(f"Loaded {len(df)} records to {table_full_name}")
@@ -412,7 +419,7 @@ class MISACRMLoader:
             insert_sql = f"INSERT INTO {schema}.{table} ({', '.join(matching_columns)}) VALUES ({placeholders})"
 
             # Insert data in batches
-            batch_size = 1000
+            batch_size = 500  # FIXED: Giảm batch size để tránh parameter limit
             total_inserted = 0
 
             for i in range(0, len(df), batch_size):
@@ -423,11 +430,13 @@ class MISACRMLoader:
                     row_data = []
                     for col in matching_columns:
                         value = row[col] if col in row else None
-                        # Handle NaN values
+                        # FIXED: Handle NaN values và data type conversion
                         if pd.isna(value):
                             row_data.append(None)
                         else:
-                            row_data.append(value)
+                            # Convert data types để tránh type mismatch
+                            converted_value = self._convert_value_for_sql(value)
+                            row_data.append(converted_value)
                     batch_data.append(row_data)
 
                 # Execute batch insert
@@ -450,6 +459,46 @@ class MISACRMLoader:
         except Exception as e:
             logger.error(f"pyodbc loading failed for {table_full_name}: {e}")
             return False
+
+    def _convert_value_for_sql(self, value):
+        """
+        Convert value để tương thích với SQL Server data types
+        
+        Args:
+            value: Giá trị cần convert
+            
+        Returns:
+            Giá trị đã được convert
+        """
+        if value is None or pd.isna(value):
+            return None
+        
+        # Convert datetime objects
+        if isinstance(value, (pd.Timestamp, datetime)):
+            return value
+        
+        # Convert large integers to string để tránh overflow
+        if isinstance(value, (int, np.integer)):
+            if value > 2147483647 or value < -2147483648:  # SQL Server int range
+                return str(value)
+            return int(value)
+        
+        # Convert float to string nếu quá lớn
+        if isinstance(value, (float, np.floating)):
+            if abs(value) > 1e15:  # Very large float
+                return str(value)
+            return float(value)
+        
+        # Convert boolean
+        if isinstance(value, bool):
+            return value
+        
+        # Convert string
+        if isinstance(value, str):
+            return value
+        
+        # Default: convert to string
+        return str(value)
 
     def load_all_data_to_staging(
         self, transformed_data: Dict[str, pd.DataFrame], truncate_first: bool = False
