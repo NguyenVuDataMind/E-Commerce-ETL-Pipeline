@@ -50,9 +50,9 @@ class MISACRMTransformer:
         """
         df = df.copy()
         df["etl_batch_id"] = self.batch_id
-        
+
         # FIXED: Sử dụng pd.Timestamp để đảm bảo datetime được xử lý đúng
-        current_time = pd.Timestamp.now(tz='UTC').tz_convert(None)
+        current_time = pd.Timestamp.now(tz="UTC").tz_convert(None)
         df["etl_created_at"] = current_time
         df["etl_updated_at"] = current_time
         df["etl_source"] = "misa_crm_api"
@@ -174,7 +174,11 @@ class MISACRMTransformer:
                 # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
                 df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
                 # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
-                df[col] = df[col].dt.tz_convert(None) if df[col].dt.tz is not None else df[col]
+                df[col] = (
+                    df[col].dt.tz_convert(None)
+                    if df[col].dt.tz is not None
+                    else df[col]
+                )
                 # FIXED: Chuyển NaT thành None để tránh lỗi data type
                 df[col] = df[col].where(pd.notna(df[col]), None)
 
@@ -503,7 +507,11 @@ class MISACRMTransformer:
                 # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
                 df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
                 # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
-                df[col] = df[col].dt.tz_convert(None) if df[col].dt.tz is not None else df[col]
+                df[col] = (
+                    df[col].dt.tz_convert(None)
+                    if df[col].dt.tz is not None
+                    else df[col]
+                )
                 # FIXED: Chuyển NaT thành None để tránh lỗi data type
                 df[col] = df[col].where(pd.notna(df[col]), None)
 
@@ -540,7 +548,11 @@ class MISACRMTransformer:
                 # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
                 df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
                 # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
-                df[col] = df[col].dt.tz_convert(None) if df[col].dt.tz is not None else df[col]
+                df[col] = (
+                    df[col].dt.tz_convert(None)
+                    if df[col].dt.tz is not None
+                    else df[col]
+                )
                 # FIXED: Chuyển NaT thành None để tránh lỗi data type
                 df[col] = df[col].where(pd.notna(df[col]), None)
 
@@ -591,7 +603,11 @@ class MISACRMTransformer:
                 # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
                 df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
                 # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
-                df[col] = df[col].dt.tz_convert(None) if df[col].dt.tz is not None else df[col]
+                df[col] = (
+                    df[col].dt.tz_convert(None)
+                    if df[col].dt.tz is not None
+                    else df[col]
+                )
                 # FIXED: Chuyển NaT thành None để tránh lỗi data type
                 df[col] = df[col].where(pd.notna(df[col]), None)
 

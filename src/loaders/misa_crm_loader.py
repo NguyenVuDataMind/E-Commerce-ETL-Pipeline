@@ -122,7 +122,9 @@ class MISACRMLoader:
 
         try:
             # FIXED: Bỏ method="multi" để tránh lỗi parameter markers với SQL Server
-            batch_size = min(50, settings.misa_crm_etl_batch_size)  # Giảm batch size xuống 50
+            batch_size = min(
+                50, settings.misa_crm_etl_batch_size
+            )  # Giảm batch size xuống 50
 
             # Load data using pandas to_sql với batch size nhỏ hơn
             df.to_sql(
@@ -408,25 +410,27 @@ class MISACRMLoader:
 
             # Match DataFrame columns with database columns
             matching_columns = [col for col in db_columns if col in df.columns]
-            
+
             # DEBUG: Log column mismatch details
             missing_in_df = [col for col in db_columns if col not in df.columns]
             extra_in_df = [col for col in df.columns if col not in db_columns]
-            
+
             if missing_in_df:
                 logger.warning(f"Columns missing in DataFrame: {missing_in_df}")
             if extra_in_df:
                 logger.warning(f"Extra columns in DataFrame: {extra_in_df}")
-            
-            logger.info(f"Matched {len(matching_columns)} columns out of {len(db_columns)} database columns")
-                        # FIXED: Sắp xếp DataFrame columns theo thứ tự database để tránh lỗi column order
-            
+
+            logger.info(
+                f"Matched {len(matching_columns)} columns out of {len(db_columns)} database columns"
+            )
+            # FIXED: Sắp xếp DataFrame columns theo thứ tự database để tránh lỗi column order
+
             if matching_columns:
                 df_ordered = df[matching_columns]
                 logger.info(f"Reordered DataFrame columns to match database order")
             else:
                 df_ordered = df
-                
+
             if not matching_columns:
                 logger.error(
                     f"No matching columns found between DataFrame and {table_full_name}"
@@ -498,7 +502,11 @@ class MISACRMLoader:
             return None
 
         # FIXED: Xử lý NaT (Not a Time) từ pandas datetime
-        if pd.isna(value) and hasattr(value, 'dtype') and 'datetime' in str(value.dtype):
+        if (
+            pd.isna(value)
+            and hasattr(value, "dtype")
+            and "datetime" in str(value.dtype)
+        ):
             return None
 
         # Convert datetime objects - FIXED: Handle date conversion properly
@@ -506,12 +514,14 @@ class MISACRMLoader:
             # Ensure proper datetime format for SQL Server
             if pd.isna(value):
                 return None
-            
+
             # FIXED: Xử lý timezone-aware datetime
-            if hasattr(value, 'tz') and value.tz is not None:
+            if hasattr(value, "tz") and value.tz is not None:
                 # Chuyển về UTC rồi loại bỏ timezone info
-                value = value.tz_convert(None) if hasattr(value, 'tz_convert') else value
-            
+                value = (
+                    value.tz_convert(None) if hasattr(value, "tz_convert") else value
+                )
+
             # FIXED: Đảm bảo format datetime đúng cho SQL Server
             try:
                 return value.strftime("%Y-%m-%d %H:%M:%S")
@@ -544,14 +554,14 @@ class MISACRMLoader:
             if 1000000000000 <= value <= 9999999999999:  # 13 digits - milliseconds
                 # Convert epoch milliseconds to datetime string
                 try:
-                    dt = pd.to_datetime(value, unit='ms')
+                    dt = pd.to_datetime(value, unit="ms")
                     return dt.strftime("%Y-%m-%d %H:%M:%S")
                 except:
                     return str(value)
             elif 1000000000 <= value <= 9999999999:  # 10 digits - seconds
                 # Convert epoch seconds to datetime string
                 try:
-                    dt = pd.to_datetime(value, unit='s')
+                    dt = pd.to_datetime(value, unit="s")
                     return dt.strftime("%Y-%m-%d %H:%M:%S")
                 except:
                     return str(value)
