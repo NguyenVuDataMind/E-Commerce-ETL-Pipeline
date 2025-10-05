@@ -235,9 +235,13 @@ def transform_misa_crm_incremental(**context):
 
         for key, df in transformed_data.items():
             if df is not None and not df.empty:
-                # Replace NaN values with None to make it JSON serializable
-                df_clean = df.fillna(None)
-                serialized_data[key] = df_clean.to_dict("records")
+                # Serialize DataFrame sang JSON-safe để tránh lỗi Timestamp/NaN
+                import json
+
+                payload_json = df.to_json(
+                    orient="records", date_format="iso", date_unit="s"
+                )
+                serialized_data[key] = json.loads(payload_json)
                 total_records += len(df)
 
         context["ti"].xcom_push(
@@ -345,26 +349,35 @@ def transform_shopee_orders_incremental(**context):
             logger.info("📭 No incremental data to transform")
             return "No data to transform"
 
-        # Transform data
+        # Transform data thành 12 DataFrame theo ERD
         transformer = ShopeeOrderTransformer()
+        tables_to_dfs = transformer.transform_orders_to_dataframes(orders_data)
 
-        # Transform to flat DataFrame (tương thích với loader hiện tại)
-        df = transformer.transform_orders_to_flat_dataframe(orders_data)
-
-        logger.info(f"✅ Transformed {len(df)} incremental orders")
-
-        # Convert DataFrame to JSON-safe dict for XCom (tránh pandas.Timestamp)
+        # Serialize từng bảng sang JSON-safe và đẩy XCom theo key riêng
         import json
 
-        payload_json = df.to_json(orient="records", date_format="iso", date_unit="s")
-        transformed_data = json.loads(payload_json)
+        total_rows = 0
+        for table_name, df in tables_to_dfs.items():
+            if df is not None and not df.empty:
+                payload_json = df.to_json(
+                    orient="records", date_format="iso", date_unit="s"
+                )
+                table_records = json.loads(payload_json)
+                context["ti"].xcom_push(
+                    key=f"shopee_incremental_transformed__{table_name}",
+                    value=table_records,
+                )
+                logger.info(
+                    f"✅ Transformed {len(df)} rows for Shopee table '{table_name}'"
+                )
+                total_rows += len(df)
+            else:
+                # Đẩy danh sách rỗng để bước load biết bỏ qua
+                context["ti"].xcom_push(
+                    key=f"shopee_incremental_transformed__{table_name}", value=[]
+                )
 
-        # Push to XCom
-        context["ti"].xcom_push(
-            key="shopee_orders_incremental_transformed", value=transformed_data
-        )
-
-        return f"Successfully transformed {len(transformed_data)} incremental orders"
+        return f"Successfully transformed Shopee incremental data into 12 tables, total {total_rows} rows"
 
     except Exception as e:
         logger.error(f"❌ Shopee Orders incremental transformation failed: {str(e)}")
@@ -378,32 +391,54 @@ def load_shopee_orders_incremental(**context):
     logger.info("🔄 Starting Shopee Orders Incremental Loading...")
 
     try:
-        # Pull transformed data from XCom
-        transformed_data = context["ti"].xcom_pull(
-            key="shopee_orders_incremental_transformed"
-        )
-
-        if not transformed_data:
-            logger.info("📭 No incremental data to load")
-            return "No data to load"
-
-        # Convert back to DataFrame
+        # Pull transformed data cho từng bảng từ XCom
         import pandas as pd
 
-        df = pd.DataFrame(transformed_data)
-
-        # Load to staging with UPSERT mode (update existing, insert new)
         loader = ShopeeOrderLoader()
 
-        # Use incremental load with UPSERT logic
-        success = loader.load_orders_incremental(df)
+        load_order = [
+            "orders",
+            "recipient_address",
+            "order_items",
+            "order_item_locations",
+            "packages",
+            "package_items",
+            "invoice",
+            "payment_info",
+            "order_pending_terms",
+            "order_warnings",
+            "prescription_images",
+            "buyer_proof_of_collection",
+        ]
 
-        if success:
-            logger.info(f"✅ Loaded {len(df)} incremental records to staging")
-            return f"Successfully loaded {len(df)} incremental records"
-        else:
-            logger.error(f"❌ Failed to load {len(df)} incremental records")
-            raise Exception(f"Failed to load {len(df)} incremental records")
+        total_loaded = 0
+        for table_name in load_order:
+            records = (
+                context["ti"].xcom_pull(
+                    key=f"shopee_incremental_transformed__{table_name}"
+                )
+                or []
+            )
+
+            if not records:
+                logger.info(f"📭 No incremental data for Shopee.{table_name}, skipping")
+                continue
+
+            df_table = pd.DataFrame(records)
+
+            ok = loader.load_dataframe_to_table(
+                df_table, table_name, if_exists="append"
+            )
+            if not ok:
+                raise Exception(
+                    f"Failed to load Shopee incremental table '{table_name}' ({len(df_table)} rows)"
+                )
+            total_loaded += len(df_table)
+
+        logger.info(
+            f"✅ Loaded Shopee incremental data into 12 tables, total {total_loaded} rows"
+        )
+        return f"Successfully loaded Shopee incremental data: {total_loaded} rows"
 
     except Exception as e:
         logger.error(f"❌ Shopee Orders incremental loading failed: {str(e)}")

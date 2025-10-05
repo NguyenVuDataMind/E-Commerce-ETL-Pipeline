@@ -260,7 +260,7 @@ CREATE TABLE staging.misa_sale_orders_flattened (
     order_invoice_date DATETIME2,
     order_production_date DATETIME2,
     item_id BIGINT NOT NULL,
-    item_product_code NVARCHAR(50) NOT NULL,
+    item_product_code NVARCHAR(50) ,
     item_unit NVARCHAR(20),
     item_usage_unit NVARCHAR(20),
     item_price DECIMAL(15,2),
@@ -304,11 +304,12 @@ CREATE TABLE staging.misa_sale_orders_flattened (
     etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'misa_crm_api',
-    CONSTRAINT PK_misa_sale_orders_flattened PRIMARY KEY (order_id, item_id, item_product_code)
+    CONSTRAINT PK_misa_sale_orders_flattened PRIMARY KEY (order_id, item_id)
 );
 GO
 CREATE INDEX IX_misa_sale_orders_order_id ON staging.misa_sale_orders_flattened(order_id);
 CREATE INDEX IX_misa_sale_orders_item_id ON staging.misa_sale_orders_flattened(item_id);
+CREATE INDEX IX_misa_sale_orders_item_product_code ON staging.misa_sale_orders_flattened(item_product_code);
 CREATE INDEX IX_misa_sale_orders_order_date ON staging.misa_sale_orders_flattened(order_sale_order_date);
 GO
 

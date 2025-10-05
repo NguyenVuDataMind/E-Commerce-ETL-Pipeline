@@ -124,6 +124,36 @@ class MISACRMLoader:
             # Chuẩn hóa DataFrame theo schema và endpoint trước khi ghi
             df = self._normalize_dataframe_for_endpoint(df, endpoint, table_info)
 
+            # Xử lý trùng khóa cho sale_orders_flattened trước khi ghi để tránh lỗi PK
+            if endpoint == "sale_orders_flattened":
+                # Bỏ các dòng thiếu khóa
+                before_len = len(df)
+                df = df.dropna(
+                    subset=["order_id", "item_id"]
+                )  # item_product_code có thể NULL theo schema mới
+                dropped_nulls = before_len - len(df)
+                if dropped_nulls > 0:
+                    logger.info(
+                        f"sale_orders_flattened: bỏ {dropped_nulls} dòng thiếu khóa (order_id/item_id) trước khi load"
+                    )
+
+                # Loại toàn bộ bản ghi trùng trên bộ khóa (order_id, item_id)
+                dup_mask = df.duplicated(subset=["order_id", "item_id"], keep=False)
+                dup_count = int(dup_mask.sum())
+                if dup_count > 0:
+                    logger.warning(
+                        f"sale_orders_flattened: phát hiện {dup_count} dòng trùng khóa trong batch — sẽ loại bỏ toàn bộ các dòng trùng để tránh lỗi PK"
+                    )
+                    df = df[~dup_mask]
+
+                # Xóa trước các bản ghi trùng trong DB để tránh xung đột khi insert
+                try:
+                    self._predelete_conflicting_sale_order_items(df, table_info)
+                except Exception as predel_err:
+                    logger.warning(
+                        f"sale_orders_flattened: không thể pre-delete khóa trùng trong DB ({predel_err}), tiếp tục ghi dữ liệu còn lại"
+                    )
+
             # FIXED: Bỏ method="multi" để tránh lỗi parameter markers với SQL Server
             batch_size = min(
                 50, settings.misa_crm_etl_batch_size
@@ -614,6 +644,39 @@ class MISACRMLoader:
         df_norm = self._normalize_by_schema_types(df_norm, column_types)
 
         return df_norm
+
+    def _predelete_conflicting_sale_order_items(
+        self, df: pd.DataFrame, table_info: Dict[str, Any]
+    ) -> None:
+        """
+        Xóa trước các bản ghi trong DB có khóa (order_id, item_id) trùng với batch hiện tại
+        để tránh lỗi trùng khóa khi insert. Hàm an toàn: nếu batch rỗng sẽ bỏ qua.
+        """
+        if df.empty:
+            return
+
+        # Lấy cặp khóa duy nhất trong batch
+        keys_df = df[["order_id", "item_id"]].dropna().drop_duplicates()
+        if keys_df.empty:
+            return
+
+        schema = table_info["schema"]
+        table = table_info["table"]
+
+        # Tạo danh sách giá trị cho câu lệnh DELETE IN (VALUES ...)
+        tuples = list(keys_df.itertuples(index=False, name=None))
+        values_clause = ", ".join([f"({int(oid)}, {int(iid)})" for oid, iid in tuples])
+
+        sql = f"""
+        DELETE tgt
+        FROM [{schema}].[{table}] AS tgt
+        JOIN (VALUES {values_clause}) AS src(order_id, item_id)
+          ON tgt.order_id = src.order_id AND tgt.item_id = src.item_id
+        """
+
+        with self.db_engine.connect() as conn:
+            conn.execute(text(sql))
+            conn.commit()
 
     def _normalize_by_schema_types(
         self, df: pd.DataFrame, column_types: Dict[str, str]
