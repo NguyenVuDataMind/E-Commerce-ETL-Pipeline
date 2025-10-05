@@ -569,18 +569,21 @@ class MISACRMLoader:
     ) -> pd.DataFrame:
         """
         - Lọc/điều chỉnh cột theo schema đích
-        - Chuẩn hóa toàn bộ các cột thời gian (ISO/epoch → datetime naive, NaT→None)
-        - Xử lý riêng các khác biệt như cột tồn tại trong schema nhưng nguồn không có
+        - Chuẩn hóa dữ liệu THEO KIỂU CỘT trong schema:
+          + DATETIME/DATETIME2: parse ISO/epoch → tz-naive, NaT→None
+          + DECIMAL/NUMERIC/INT: ép số `to_numeric(errors='coerce')`
+          + BIT: map về True/False hoặc None
+          + NVARCHAR: có thể thay "" → None để sạch
         """
         df_norm = df.copy()
 
-        # Lấy danh sách cột thực từ DB để lọc và reorder
+        # Lấy danh sách cột & kiểu dữ liệu từ DB
         try:
             with self.db_engine.connect() as conn:
                 cols = conn.execute(
                     text(
                         """
-                        SELECT COLUMN_NAME
+                        SELECT COLUMN_NAME, DATA_TYPE
                         FROM INFORMATION_SCHEMA.COLUMNS
                         WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table
                         ORDER BY ORDINAL_POSITION
@@ -589,8 +592,10 @@ class MISACRMLoader:
                     {"schema": table_info["schema"], "table": table_info["table"]},
                 ).fetchall()
                 db_columns = [r[0] for r in cols]
+                column_types = {r[0]: str(r[1]).lower() for r in cols}
         except Exception:
             db_columns = df_norm.columns.tolist()
+            column_types = {c: "nvarchar" for c in db_columns}
 
         # Nếu endpoint là customers và schema có account_code nhưng nguồn không có → bỏ cột này
         if (
@@ -605,8 +610,73 @@ class MISACRMLoader:
         if keep_cols:
             df_norm = df_norm[keep_cols]
 
-        # Chuẩn hóa datetime
-        df_norm = self._normalize_datetime_columns(df_norm)
+        # Chuẩn hóa theo kiểu cột trong schema
+        df_norm = self._normalize_by_schema_types(df_norm, column_types)
+
+        return df_norm
+
+    def _normalize_by_schema_types(self, df: pd.DataFrame, column_types: Dict[str, str]) -> pd.DataFrame:
+        df_norm = df.copy()
+
+        datetime_types = {"datetime", "datetime2", "smalldatetime", "date"}
+        numeric_types = {"decimal", "numeric", "float", "real", "int", "bigint", "smallint", "tinyint"}
+
+        for col in df_norm.columns:
+            dtype = column_types.get(col, "nvarchar")
+            s = df_norm[col]
+
+            # DATETIME
+            if dtype in datetime_types:
+                if pd.api.types.is_datetime64_any_dtype(s):
+                    try:
+                        s2 = s.dt.tz_convert(None)
+                    except Exception:
+                        s2 = s
+                    df_norm[col] = s2.where(pd.notna(s2), None)
+                else:
+                    if pd.api.types.is_numeric_dtype(s):
+                        s_float = s.astype("float64")
+                        if s_float.dropna().gt(1e12).any():
+                            dt = pd.to_datetime(s_float, unit="ms", errors="coerce", utc=True)
+                        elif s_float.dropna().gt(1e9).any():
+                            dt = pd.to_datetime(s_float, unit="s", errors="coerce", utc=True)
+                        else:
+                            dt = pd.to_datetime(s_float, errors="coerce", utc=True)
+                    else:
+                        dt = pd.to_datetime(s, errors="coerce", utc=True)
+                    dt = dt.dt.tz_convert(None)
+                    df_norm[col] = dt.where(pd.notna(dt), None)
+                continue
+
+            # NUMERIC
+            if dtype in numeric_types:
+                if pd.api.types.is_string_dtype(s):
+                    s_clean = s.str.replace("%", "", regex=False).str.replace(",", "", regex=False).str.strip()
+                else:
+                    s_clean = s
+                df_norm[col] = pd.to_numeric(s_clean, errors="coerce")
+                continue
+
+            # BIT
+            if dtype == "bit":
+                if pd.api.types.is_bool_dtype(s):
+                    df_norm[col] = s
+                else:
+                    def _to_bool(v):
+                        if pd.isna(v):
+                            return None
+                        if isinstance(v, bool):
+                            return v
+                        vs = str(v).strip().lower()
+                        if vs in {"1", "true", "yes", "on"}: return True
+                        if vs in {"0", "false", "no", "off"}: return False
+                        return None
+                    df_norm[col] = s.map(_to_bool)
+                continue
+
+            # NVARCHAR: thay chuỗi rỗng thành NULL để sạch dữ liệu
+            if pd.api.types.is_string_dtype(s):
+                df_norm[col] = s.replace("", None)
 
         return df_norm
 
