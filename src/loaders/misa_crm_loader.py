@@ -615,11 +615,22 @@ class MISACRMLoader:
 
         return df_norm
 
-    def _normalize_by_schema_types(self, df: pd.DataFrame, column_types: Dict[str, str]) -> pd.DataFrame:
+    def _normalize_by_schema_types(
+        self, df: pd.DataFrame, column_types: Dict[str, str]
+    ) -> pd.DataFrame:
         df_norm = df.copy()
 
         datetime_types = {"datetime", "datetime2", "smalldatetime", "date"}
-        numeric_types = {"decimal", "numeric", "float", "real", "int", "bigint", "smallint", "tinyint"}
+        numeric_types = {
+            "decimal",
+            "numeric",
+            "float",
+            "real",
+            "int",
+            "bigint",
+            "smallint",
+            "tinyint",
+        }
 
         for col in df_norm.columns:
             dtype = column_types.get(col, "nvarchar")
@@ -637,9 +648,13 @@ class MISACRMLoader:
                     if pd.api.types.is_numeric_dtype(s):
                         s_float = s.astype("float64")
                         if s_float.dropna().gt(1e12).any():
-                            dt = pd.to_datetime(s_float, unit="ms", errors="coerce", utc=True)
+                            dt = pd.to_datetime(
+                                s_float, unit="ms", errors="coerce", utc=True
+                            )
                         elif s_float.dropna().gt(1e9).any():
-                            dt = pd.to_datetime(s_float, unit="s", errors="coerce", utc=True)
+                            dt = pd.to_datetime(
+                                s_float, unit="s", errors="coerce", utc=True
+                            )
                         else:
                             dt = pd.to_datetime(s_float, errors="coerce", utc=True)
                     else:
@@ -651,7 +666,11 @@ class MISACRMLoader:
             # NUMERIC
             if dtype in numeric_types:
                 if pd.api.types.is_string_dtype(s):
-                    s_clean = s.str.replace("%", "", regex=False).str.replace(",", "", regex=False).str.strip()
+                    s_clean = (
+                        s.str.replace("%", "", regex=False)
+                        .str.replace(",", "", regex=False)
+                        .str.strip()
+                    )
                 else:
                     s_clean = s
                 df_norm[col] = pd.to_numeric(s_clean, errors="coerce")
@@ -662,15 +681,19 @@ class MISACRMLoader:
                 if pd.api.types.is_bool_dtype(s):
                     df_norm[col] = s
                 else:
+
                     def _to_bool(v):
                         if pd.isna(v):
                             return None
                         if isinstance(v, bool):
                             return v
                         vs = str(v).strip().lower()
-                        if vs in {"1", "true", "yes", "on"}: return True
-                        if vs in {"0", "false", "no", "off"}: return False
+                        if vs in {"1", "true", "yes", "on"}:
+                            return True
+                        if vs in {"0", "false", "no", "off"}:
+                            return False
                         return None
+
                     df_norm[col] = s.map(_to_bool)
                 continue
 
