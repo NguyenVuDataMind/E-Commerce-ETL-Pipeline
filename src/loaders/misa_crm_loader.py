@@ -121,6 +121,9 @@ class MISACRMLoader:
         table_info = self._get_table_info(table_full_name)
 
         try:
+            # Chuẩn hóa DataFrame theo schema và endpoint trước khi ghi
+            df = self._normalize_dataframe_for_endpoint(df, endpoint, table_info)
+
             # FIXED: Bỏ method="multi" để tránh lỗi parameter markers với SQL Server
             batch_size = min(
                 50, settings.misa_crm_etl_batch_size
@@ -204,7 +207,7 @@ class MISACRMLoader:
             df_prepared["etl_updated_at"] = current_time
 
             # Handle NaN values
-            df_prepared = df_prepared.fillna("")
+            # Giữ None để ghi NULL lên DB thay vì chuỗi rỗng
 
             return df_prepared
 
@@ -489,102 +492,123 @@ class MISACRMLoader:
 
     def _convert_value_for_sql(self, value):
         """
-        Convert value để tương thích với SQL Server data types
-        FIXED: Xử lý đúng NaT values từ pandas datetime
-
-        Args:
-            value: Giá trị cần convert
-
-        Returns:
-            Giá trị đã được convert
+        Convert value tối giản để tương thích SQL Server data types.
+        Sau khi đã normalize DataFrame, hàm này chỉ xử lý các trường hợp phổ biến.
         """
         if value is None or pd.isna(value):
             return None
 
-        # FIXED: Xử lý NaT (Not a Time) từ pandas datetime
-        if (
-            pd.isna(value)
-            and hasattr(value, "dtype")
-            and "datetime" in str(value.dtype)
-        ):
-            return None
-
-        # Convert datetime objects - FIXED: Handle date conversion properly
+        # Datetime
         if isinstance(value, (pd.Timestamp, datetime)):
-            # Ensure proper datetime format for SQL Server
-            if pd.isna(value):
-                return None
-
-            # FIXED: Xử lý timezone-aware datetime
             if hasattr(value, "tz") and value.tz is not None:
-                # Chuyển về UTC rồi loại bỏ timezone info
                 value = (
                     value.tz_convert(None) if hasattr(value, "tz_convert") else value
                 )
-
-            # FIXED: Đảm bảo format datetime đúng cho SQL Server
             try:
                 return value.strftime("%Y-%m-%d %H:%M:%S")
-            except (AttributeError, ValueError):
-                # Fallback nếu strftime không hoạt động
+            except Exception:
                 return str(value)
 
-        # Convert string dates to proper format
-        if isinstance(value, str):
-            try:
-                # Try to parse common date formats
-                if len(value) == 10 and "-" in value:  # YYYY-MM-DD format
-                    return value
-                elif (
-                    len(value) == 19 and "-" in value and ":" in value
-                ):  # YYYY-MM-DD HH:MM:SS format
-                    return value
-                else:
-                    # Try to parse and reformat
-                    parsed_date = pd.to_datetime(value, errors="coerce")
-                    if not pd.isna(parsed_date):
-                        return parsed_date.strftime("%Y-%m-%d %H:%M:%S")
-            except:
-                pass
-
-        # Convert large integers to string để tránh overflow
+        # Integer/Float/Bool/Str giữ nguyên dạng phù hợp
         if isinstance(value, (int, np.integer)):
-            # FIXED: Kiểm tra nếu đây có thể là epoch timestamp (milliseconds)
-            # Epoch timestamp thường có 13 chữ số (milliseconds) hoặc 10 chữ số (seconds)
-            if 1000000000000 <= value <= 9999999999999:  # 13 digits - milliseconds
-                # Convert epoch milliseconds to datetime string
-                try:
-                    dt = pd.to_datetime(value, unit="ms")
-                    return dt.strftime("%Y-%m-%d %H:%M:%S")
-                except:
-                    return str(value)
-            elif 1000000000 <= value <= 9999999999:  # 10 digits - seconds
-                # Convert epoch seconds to datetime string
-                try:
-                    dt = pd.to_datetime(value, unit="s")
-                    return dt.strftime("%Y-%m-%d %H:%M:%S")
-                except:
-                    return str(value)
-            elif value > 2147483647 or value < -2147483648:  # SQL Server int range
-                return str(value)
             return int(value)
 
-        # Convert float to string nếu quá lớn
         if isinstance(value, (float, np.floating)):
-            if abs(value) > 1e15:  # Very large float
-                return str(value)
             return float(value)
 
-        # Convert boolean
         if isinstance(value, bool):
             return value
 
-        # Convert string
         if isinstance(value, str):
             return value
 
-        # Default: convert to string
+        # Mặc định: stringify
         return str(value)
+
+    def _normalize_datetime_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Chuẩn hóa các cột datetime: parse ISO/epoch, bỏ timezone, thay NaT bằng None.
+        Áp dụng an toàn cho mọi DataFrame (không thay đổi cột không phải datetime).
+        """
+        df_norm = df.copy()
+        for col in df_norm.columns:
+            s = df_norm[col]
+            # Bỏ qua nếu là các kiểu không liên quan
+            if pd.api.types.is_datetime64_any_dtype(s):
+                # Loại bỏ timezone (nếu có) và thay NaT bằng None
+                try:
+                    s2 = s.dt.tz_convert(None)
+                except Exception:
+                    s2 = s
+                df_norm[col] = s2.where(pd.notna(s2), None)
+            else:
+                # Nếu là numeric có thể là epoch (ms/s) hoặc string ISO
+                if pd.api.types.is_numeric_dtype(s):
+                    s_float = s.astype("float64")
+                    if s_float.dropna().gt(1e12).any():
+                        dt = pd.to_datetime(
+                            s_float, unit="ms", errors="coerce", utc=True
+                        )
+                    elif s_float.dropna().gt(1e9).any():
+                        dt = pd.to_datetime(
+                            s_float, unit="s", errors="coerce", utc=True
+                        )
+                    else:
+                        continue
+                    dt = dt.dt.tz_convert(None)
+                    df_norm[col] = dt.where(pd.notna(dt), None)
+                elif pd.api.types.is_string_dtype(s):
+                    dt = pd.to_datetime(s, errors="coerce", utc=True)
+                    if dt.notna().any():
+                        dt = dt.dt.tz_convert(None)
+                        df_norm[col] = dt.where(pd.notna(dt), None)
+        return df_norm
+
+    def _normalize_dataframe_for_endpoint(
+        self, df: pd.DataFrame, endpoint: str, table_info: Dict[str, Any]
+    ) -> pd.DataFrame:
+        """
+        - Lọc/điều chỉnh cột theo schema đích
+        - Chuẩn hóa toàn bộ các cột thời gian (ISO/epoch → datetime naive, NaT→None)
+        - Xử lý riêng các khác biệt như cột tồn tại trong schema nhưng nguồn không có
+        """
+        df_norm = df.copy()
+
+        # Lấy danh sách cột thực từ DB để lọc và reorder
+        try:
+            with self.db_engine.connect() as conn:
+                cols = conn.execute(
+                    text(
+                        """
+                        SELECT COLUMN_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table
+                        ORDER BY ORDINAL_POSITION
+                        """
+                    ),
+                    {"schema": table_info["schema"], "table": table_info["table"]},
+                ).fetchall()
+                db_columns = [r[0] for r in cols]
+        except Exception:
+            db_columns = df_norm.columns.tolist()
+
+        # Nếu endpoint là customers và schema có account_code nhưng nguồn không có → bỏ cột này
+        if (
+            endpoint == "customers"
+            and "account_code" in db_columns
+            and "account_code" not in df_norm.columns
+        ):
+            db_columns = [c for c in db_columns if c != "account_code"]
+
+        # Giữ lại cột có trong DB
+        keep_cols = [c for c in db_columns if c in df_norm.columns]
+        if keep_cols:
+            df_norm = df_norm[keep_cols]
+
+        # Chuẩn hóa datetime
+        df_norm = self._normalize_datetime_columns(df_norm)
+
+        return df_norm
 
     def load_all_data_to_staging(
         self, transformed_data: Dict[str, pd.DataFrame], truncate_first: bool = False

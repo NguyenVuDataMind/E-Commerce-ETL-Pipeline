@@ -115,7 +115,6 @@ PRINT 'Creating table staging.misa_customers...';
 CREATE TABLE staging.misa_customers (
     id BIGINT PRIMARY KEY,
     account_number NVARCHAR(50),
-    account_code NVARCHAR(50),
     account_name NVARCHAR(500),
     account_short_name NVARCHAR(255),
     owner_name NVARCHAR(255),
@@ -250,6 +249,7 @@ CREATE TABLE staging.misa_sale_orders_flattened (
     order_shipping_contact_name NVARCHAR(255),
     order_organization_unit_name NVARCHAR(255),
     order_owner_name NVARCHAR(255),
+    order_number_of_days_owed DECIMAL(10,2),
     order_employee_code NVARCHAR(50),
     order_account_code NVARCHAR(50),
     order_contact_code NVARCHAR(50),
@@ -413,7 +413,7 @@ GO
 PRINT 'Creating table staging.misa_products...';
 CREATE TABLE staging.misa_products (
     id BIGINT PRIMARY KEY,
-    product_code NVARCHAR(50) UNIQUE,
+    product_code NVARCHAR(50),
     product_name NVARCHAR(500),
     product_category NVARCHAR(100),
     usage_unit NVARCHAR(50),
@@ -453,7 +453,10 @@ CREATE TABLE staging.misa_products (
     etl_source NVARCHAR(50) DEFAULT 'misa_crm_api'
 );
 GO
-CREATE INDEX IX_misa_products_product_code ON staging.misa_products(product_code);
+-- Filtered unique index: chỉ unique khi product_code IS NOT NULL
+CREATE UNIQUE NONCLUSTERED INDEX IX_misa_products_product_code_unique
+ON staging.misa_products(product_code)
+WHERE product_code IS NOT NULL;
 GO
 
 -- === STEP 5: CREATE TIKTOK SHOP STAGING TABLE ===

@@ -756,45 +756,6 @@ class ShopeeOrderExtractor:
         )
         return all_orders
 
-    def find_earliest_order_date(
-        self, max_lookback_years: int = 2
-    ) -> Optional[datetime]:
-        """
-        Tìm ngày đơn hàng sớm nhất có thể (auto-detect start date)
-
-        Args:
-            max_lookback_years: Số năm tối đa để lookback
-
-        Returns:
-            Datetime của đơn hàng sớm nhất hoặc None nếu không tìm thấy
-        """
-        logger.info(
-            f"🔍 Auto-detecting earliest order date (max {max_lookback_years} years back)"
-        )
-
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=max_lookback_years * 365)
-
-        # Binary search để tìm ngày sớm nhất có data
-        while (end_date - start_date).days > 1:
-            mid_date = start_date + (end_date - start_date) / 2
-
-            start_timestamp = int(start_date.timestamp())
-            mid_timestamp = int(mid_date.timestamp())
-
-            # Kiểm tra nửa đầu
-            response = self.get_order_list(
-                time_from=start_timestamp, time_to=mid_timestamp, page_size=1
-            )
-
-            if response and response.get("response", {}).get("order_list"):
-                end_date = mid_date
-            else:
-                start_date = mid_date
-
-        logger.info(f"✅ Earliest order date detected: {start_date}")
-        return start_date
-
     def _save_tokens_to_db(self):
         """Lưu Shopee tokens vào database"""
         try:
