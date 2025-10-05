@@ -229,7 +229,7 @@ def transform_tiktok_shop_full_load(**context):
 
         # Convert to dict for XCom (handle NaN values)
         # FIXED: Sử dụng fillna với value cụ thể thay vì None
-        transformed_df_clean = transformed_df.fillna(value=None)
+        transformed_df_clean = transformed_df
         transformed_data = transformed_df_clean.to_dict("records")
 
         # Push to XCom
