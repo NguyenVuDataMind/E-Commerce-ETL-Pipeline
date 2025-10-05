@@ -509,11 +509,11 @@ class TikTokShopOrderExtractor:
             start_timestamp = int(start_time.timestamp())
             end_timestamp = int(end_time.timestamp())
 
-            # Get order IDs first
+            # Get order IDs first (truyền tham số vị trí theo chữ ký hàm)
             order_ids = self.search_orders_for_ids(
-                create_time_ge=start_timestamp,
-                create_time_lt=end_timestamp,
-                page_size=50,  # Smaller batch for 10-min incremental window
+                start_timestamp,
+                end_timestamp,
+                page_size=50,  # Batch nhỏ cho cửa sổ incremental ngắn
             )
 
             if not order_ids:
@@ -521,7 +521,7 @@ class TikTokShopOrderExtractor:
                 return []
 
             # Extract full details
-            orders = self.get_order_details_batch(order_ids)
+            orders = self.get_order_details_with_ids(order_ids)
 
             self.logger.info(f"Extracted {len(orders)} orders for incremental update")
             return orders

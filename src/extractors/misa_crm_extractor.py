@@ -444,7 +444,7 @@ class MISACRMExtractor:
         return all_records
 
     def extract_incremental_data(
-        self, endpoint_name: str, lookback_hours: int = None
+        self, endpoint_name: str, lookback_hours: int = None, modified_since: datetime = None
     ) -> List[Dict]:
         """
         Lấy dữ liệu incremental (chỉ dữ liệu mới/thay đổi)
@@ -452,16 +452,24 @@ class MISACRMExtractor:
         Args:
             endpoint_name: Tên endpoint
             lookback_hours: Số giờ nhìn lại (None = sử dụng config mặc định)
+            modified_since: Mốc thời gian (datetime) để lọc bản ghi có modified_date >= mốc này. Ưu tiên hơn lookback_hours nếu được cung cấp.
 
         Returns:
             Danh sách records đã thay đổi
         """
-        if lookback_hours is None:
-            lookback_hours = settings.misa_crm_incremental_lookback_hours
-
-        logger.info(
-            f"Lấy dữ liệu incremental từ {endpoint_name} (lookback: {lookback_hours} giờ)"
-        )
+        # Xác định cutoff_time: ưu tiên modified_since nếu được truyền vào; nếu không, suy ra từ lookback_hours
+        if modified_since is not None:
+            cutoff_time = modified_since
+            logger.info(
+                f"Lấy dữ liệu incremental từ {endpoint_name} (cutoff theo modified_since: {cutoff_time.isoformat()})"
+            )
+        else:
+            if lookback_hours is None:
+                lookback_hours = settings.misa_crm_incremental_lookback_hours
+            cutoff_time = datetime.now() - timedelta(hours=lookback_hours)
+            logger.info(
+                f"Lấy dữ liệu incremental từ {endpoint_name} (lookback: {lookback_hours} giờ, cutoff: {cutoff_time.isoformat()})"
+            )
 
         # TODO: Cải thiện - thay vì lấy tất cả dữ liệu rồi filter, nên filter ngay ở API level
         # Hiện tại vẫn phải lấy tất cả dữ liệu (với giới hạn trang để tránh quá tải)
@@ -471,7 +479,6 @@ class MISACRMExtractor:
             return []
 
         # Lọc theo modified_date
-        cutoff_time = datetime.now() - timedelta(hours=lookback_hours)
         filtered_data = []
 
         for record in all_data:

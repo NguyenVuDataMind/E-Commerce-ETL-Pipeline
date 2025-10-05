@@ -60,6 +60,7 @@ services:
       - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
       - AIRFLOW__CELERY__BROKER_URL=redis://:@redis:6379/0
       - AIRFLOW__CORE__FERNET_KEY=YlCImzjge_TeZc6jGAjVLO8b5iWFm_3vNt0BY7r_Jsk=
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY}
 
 
       # Custom Connections
@@ -127,6 +128,7 @@ services:
       - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
       - AIRFLOW__CELERY__BROKER_URL=redis://:@redis:6379/0
       - AIRFLOW__CORE__FERNET_KEY=YlCImzjge_TeZc6jGAjVLO8b5iWFm_3vNt0BY7r_Jsk=
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY}
 
       # Custom Connections
       - AIRFLOW_CONN_MSSQL_FACOLOS_DW=mssql://sa:${SQL_SERVER_PASSWORD}@sqlserver:1433/${SQL_SERVER_DATABASE}?driver=ODBC+Driver+17+for+SQL+Server&Encrypt=no
@@ -187,6 +189,7 @@ services:
       - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
       - AIRFLOW__CELERY__BROKER_URL=redis://:@redis:6379/0
       - AIRFLOW__CORE__FERNET_KEY=YlCImzjge_TeZc6jGAjVLO8b5iWFm_3vNt0BY7r_Jsk=
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY}
 
       # Production ETL Settings
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
