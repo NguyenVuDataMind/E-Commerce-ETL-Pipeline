@@ -100,7 +100,7 @@ def transform_tiktok_shop_incremental(**context):
 
         # Transform data
         transformer = TikTokShopOrderTransformer()
-        transformed_df = transformer.transform_orders(orders_data)
+        transformed_df = transformer.transform_orders_to_dataframe(orders_data)
 
         logger.info(f"✅ Transformed {len(transformed_df)} incremental records")
 
@@ -173,7 +173,7 @@ def extract_misa_crm_incremental(**context):
         extractor = MISACRMExtractor()
 
         # Các endpoints cần extract incremental
-        endpoints = ["customers", "sale_orders", "contacts", "products"]
+        endpoints = ["customers", "sale_orders", "contacts", "products", "stocks"]
         incremental_data = {}
 
         # Lấy timestamp theo cấu hình lookback (phút)
@@ -223,7 +223,11 @@ def transform_misa_crm_incremental(**context):
 
         # Transform data
         transformer = MISACRMTransformer()
-        transformed_data = transformer.transform_all_endpoints(incremental_data)
+        # Tạo batch_id dựa trên execution timestamp để truy vết phiên chạy
+        batch_id = f"inc_{context.get('ts_nodash') or datetime.utcnow().strftime('%Y%m%dT%H%M%S')}"
+        transformed_data = transformer.transform_all_endpoints(
+            incremental_data, batch_id
+        )
 
         # Convert DataFrames to dict for XCom
         serialized_data = {}
@@ -349,8 +353,11 @@ def transform_shopee_orders_incremental(**context):
 
         logger.info(f"✅ Transformed {len(df)} incremental orders")
 
-        # Convert DataFrame to dict for XCom
-        transformed_data = df.to_dict("records")
+        # Convert DataFrame to JSON-safe dict for XCom (tránh pandas.Timestamp)
+        import json
+
+        payload_json = df.to_json(orient="records", date_format="iso", date_unit="s")
+        transformed_data = json.loads(payload_json)
 
         # Push to XCom
         context["ti"].xcom_push(

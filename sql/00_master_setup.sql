@@ -304,7 +304,7 @@ CREATE TABLE staging.misa_sale_orders_flattened (
     etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'misa_crm_api',
-    CONSTRAINT PK_misa_sale_orders_flattened PRIMARY KEY (order_sale_order_no, item_product_code, item_sort_order)
+    CONSTRAINT PK_misa_sale_orders_flattened PRIMARY KEY (order_id, item_id, item_product_code)
 );
 GO
 CREATE INDEX IX_misa_sale_orders_order_id ON staging.misa_sale_orders_flattened(order_id);
