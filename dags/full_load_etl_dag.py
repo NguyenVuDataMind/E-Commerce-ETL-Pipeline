@@ -504,8 +504,8 @@ with DAG(
 
     end_task = BashOperator(
         task_id="end_full_load",
-        bash_command='echo "Parallel Full Load ETL with Consistent Structure completed for all sources."',
+        bash_command='echo "Sequential Full Load ETL completed: MISA → TikTok → Shopee."',
     )
 
-    # PARALLEL execution cho MISA CRM, TikTok Shop và Shopee Orders
-    start_task >> [misa_crm_group, tiktok_shop_group, shopee_orders_group] >> end_task
+    # SEQUENTIAL execution: MISA CRM → TikTok Shop → Shopee Orders
+    start_task >> misa_crm_group >> tiktok_shop_group >> shopee_orders_group >> end_task

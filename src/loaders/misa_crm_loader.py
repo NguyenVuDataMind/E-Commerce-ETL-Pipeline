@@ -36,7 +36,7 @@ class MISACRMLoader:
         # Table mapping - phải khớp với keys từ transformer
         self.table_mappings = {
             "customers": settings.get_misa_crm_table_full_name("misa_customers"),
-            "sale_orders": settings.get_misa_crm_table_full_name(
+            "sale_orders_flattened": settings.get_misa_crm_table_full_name(
                 "misa_sale_orders_flattened"
             ),
             "contacts": settings.get_misa_crm_table_full_name("misa_contacts"),
@@ -121,8 +121,8 @@ class MISACRMLoader:
         table_info = self._get_table_info(table_full_name)
 
         try:
-            # FIXED: Sử dụng batch size nhỏ hơn để tránh parameter limit
-            batch_size = min(500, settings.misa_crm_etl_batch_size)  # Giảm batch size
+            # FIXED: Bỏ method="multi" để tránh lỗi parameter markers với SQL Server
+            batch_size = min(50, settings.misa_crm_etl_batch_size)  # Giảm batch size xuống 50
 
             # Load data using pandas to_sql với batch size nhỏ hơn
             df.to_sql(
@@ -131,7 +131,7 @@ class MISACRMLoader:
                 schema=table_info["schema"],
                 if_exists=if_exists,
                 index=False,
-                method="multi",
+                # method="multi",  # FIXED: Bỏ method="multi" vì không tương thích với SQL Server
                 chunksize=batch_size,  # FIXED: Batch size nhỏ hơn
             )
 
@@ -280,7 +280,7 @@ class MISACRMLoader:
         """
         primary_keys = {
             "customers": "customer_id",
-            "sale_orders": "order_id",
+            "sale_orders_flattened": "order_id",
             "contacts": "contact_id",
             "stocks": "stock_id",
             "products": "product_id",
@@ -303,7 +303,7 @@ class MISACRMLoader:
         # Using ModifiedOn as the primary indicator of change
         conditions = {
             "customers": "target.ModifiedOn < source.ModifiedOn",
-            "sale_orders": "target.ModifiedOn < source.ModifiedOn",
+            "sale_orders_flattened": "target.ModifiedOn < source.ModifiedOn",
             "contacts": "target.ModifiedOn < source.ModifiedOn",
             "stocks": "target.ModifiedOn < source.ModifiedOn",
             "products": "target.ModifiedOn < source.ModifiedOn",
@@ -408,11 +408,31 @@ class MISACRMLoader:
 
             # Match DataFrame columns with database columns
             matching_columns = [col for col in db_columns if col in df.columns]
-
+            
+            # DEBUG: Log column mismatch details
+            missing_in_df = [col for col in db_columns if col not in df.columns]
+            extra_in_df = [col for col in df.columns if col not in db_columns]
+            
+            if missing_in_df:
+                logger.warning(f"Columns missing in DataFrame: {missing_in_df}")
+            if extra_in_df:
+                logger.warning(f"Extra columns in DataFrame: {extra_in_df}")
+            
+            logger.info(f"Matched {len(matching_columns)} columns out of {len(db_columns)} database columns")
+                        # FIXED: Sắp xếp DataFrame columns theo thứ tự database để tránh lỗi column order
+            
+            if matching_columns:
+                df_ordered = df[matching_columns]
+                logger.info(f"Reordered DataFrame columns to match database order")
+            else:
+                df_ordered = df
+                
             if not matching_columns:
                 logger.error(
                     f"No matching columns found between DataFrame and {table_full_name}"
                 )
+                logger.error(f"DataFrame columns: {sorted(df.columns.tolist())}")
+                logger.error(f"Database columns: {sorted(db_columns)}")
                 return False
 
             # Prepare insert statement
@@ -426,7 +446,7 @@ class MISACRMLoader:
             total_inserted = 0
 
             for i in range(0, len(df), batch_size):
-                batch_df = df.iloc[i : i + batch_size]
+                batch_df = df_ordered.iloc[i : i + batch_size]
                 batch_data = []
 
                 for _, row in batch_df.iterrows():
@@ -466,6 +486,7 @@ class MISACRMLoader:
     def _convert_value_for_sql(self, value):
         """
         Convert value để tương thích với SQL Server data types
+        FIXED: Xử lý đúng NaT values từ pandas datetime
 
         Args:
             value: Giá trị cần convert
@@ -476,16 +497,27 @@ class MISACRMLoader:
         if value is None or pd.isna(value):
             return None
 
+        # FIXED: Xử lý NaT (Not a Time) từ pandas datetime
+        if pd.isna(value) and hasattr(value, 'dtype') and 'datetime' in str(value.dtype):
+            return None
+
         # Convert datetime objects - FIXED: Handle date conversion properly
         if isinstance(value, (pd.Timestamp, datetime)):
             # Ensure proper datetime format for SQL Server
             if pd.isna(value):
                 return None
-            return (
-                value.strftime("%Y-%m-%d %H:%M:%S")
-                if hasattr(value, "strftime")
-                else str(value)
-            )
+            
+            # FIXED: Xử lý timezone-aware datetime
+            if hasattr(value, 'tz') and value.tz is not None:
+                # Chuyển về UTC rồi loại bỏ timezone info
+                value = value.tz_convert(None) if hasattr(value, 'tz_convert') else value
+            
+            # FIXED: Đảm bảo format datetime đúng cho SQL Server
+            try:
+                return value.strftime("%Y-%m-%d %H:%M:%S")
+            except (AttributeError, ValueError):
+                # Fallback nếu strftime không hoạt động
+                return str(value)
 
         # Convert string dates to proper format
         if isinstance(value, str):
@@ -507,7 +539,23 @@ class MISACRMLoader:
 
         # Convert large integers to string để tránh overflow
         if isinstance(value, (int, np.integer)):
-            if value > 2147483647 or value < -2147483648:  # SQL Server int range
+            # FIXED: Kiểm tra nếu đây có thể là epoch timestamp (milliseconds)
+            # Epoch timestamp thường có 13 chữ số (milliseconds) hoặc 10 chữ số (seconds)
+            if 1000000000000 <= value <= 9999999999999:  # 13 digits - milliseconds
+                # Convert epoch milliseconds to datetime string
+                try:
+                    dt = pd.to_datetime(value, unit='ms')
+                    return dt.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    return str(value)
+            elif 1000000000 <= value <= 9999999999:  # 10 digits - seconds
+                # Convert epoch seconds to datetime string
+                try:
+                    dt = pd.to_datetime(value, unit='s')
+                    return dt.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    return str(value)
+            elif value > 2147483647 or value < -2147483648:  # SQL Server int range
                 return str(value)
             return int(value)
 

@@ -50,8 +50,11 @@ class MISACRMTransformer:
         """
         df = df.copy()
         df["etl_batch_id"] = self.batch_id
-        df["etl_created_at"] = datetime.now()
-        df["etl_updated_at"] = datetime.now()
+        
+        # FIXED: Sử dụng pd.Timestamp để đảm bảo datetime được xử lý đúng
+        current_time = pd.Timestamp.now(tz='UTC').tz_convert(None)
+        df["etl_created_at"] = current_time
+        df["etl_updated_at"] = current_time
         df["etl_source"] = "misa_crm_api"
 
         return df
@@ -168,7 +171,12 @@ class MISACRMTransformer:
 
         for col in date_columns:
             if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors="coerce")
+                # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
+                df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
+                # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
+                df[col] = df[col].dt.tz_convert(None) if df[col].dt.tz is not None else df[col]
+                # FIXED: Chuyển NaT thành None để tránh lỗi data type
+                df[col] = df[col].where(pd.notna(df[col]), None)
 
         # Boolean columns
         boolean_columns = [
@@ -181,7 +189,8 @@ class MISACRMTransformer:
 
         for col in boolean_columns:
             if col in df.columns:
-                df[col] = df[col].astype(bool, errors="ignore")
+                # FIXED: Xử lý null values cho boolean columns (NaN → False)
+                df[col] = df[col].fillna(False).astype(bool)
 
         # Add ETL metadata
         df = self._add_etl_metadata(df)
@@ -432,7 +441,8 @@ class MISACRMTransformer:
         boolean_columns = ["order_is_use_currency", "item_is_promotion"]
         for col in boolean_columns:
             if col in df.columns:
-                df[col] = df[col].astype(bool, errors="ignore")
+                # FIXED: Xử lý null values cho boolean columns (NaN → False)
+                df[col] = df[col].fillna(False).astype(bool)
 
         # Add ETL metadata
         df = self._add_etl_metadata(df)
@@ -490,14 +500,20 @@ class MISACRMTransformer:
 
         for col in date_columns:
             if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors="coerce")
+                # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
+                df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
+                # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
+                df[col] = df[col].dt.tz_convert(None) if df[col].dt.tz is not None else df[col]
+                # FIXED: Chuyển NaT thành None để tránh lỗi data type
+                df[col] = df[col].where(pd.notna(df[col]), None)
 
         # Boolean columns
         boolean_columns = ["email_opt_out", "phone_opt_out", "inactive", "is_public"]
 
         for col in boolean_columns:
             if col in df.columns:
-                df[col] = df[col].astype(bool, errors="ignore")
+                # FIXED: Xử lý null values cho boolean columns (NaN → False)
+                df[col] = df[col].fillna(False).astype(bool)
 
         df = self._add_etl_metadata(df)
 
@@ -521,14 +537,20 @@ class MISACRMTransformer:
 
         for col in date_columns:
             if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors="coerce")
+                # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
+                df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
+                # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
+                df[col] = df[col].dt.tz_convert(None) if df[col].dt.tz is not None else df[col]
+                # FIXED: Chuyển NaT thành None để tránh lỗi data type
+                df[col] = df[col].where(pd.notna(df[col]), None)
 
         # Boolean columns
         boolean_columns = ["inactive"]
 
         for col in boolean_columns:
             if col in df.columns:
-                df[col] = df[col].astype(bool, errors="ignore")
+                # FIXED: Xử lý null values cho boolean columns (NaN → False)
+                df[col] = df[col].fillna(False).astype(bool)
 
         df = self._add_etl_metadata(df)
 
@@ -566,7 +588,12 @@ class MISACRMTransformer:
 
         for col in date_columns:
             if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors="coerce")
+                # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
+                df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
+                # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
+                df[col] = df[col].dt.tz_convert(None) if df[col].dt.tz is not None else df[col]
+                # FIXED: Chuyển NaT thành None để tránh lỗi data type
+                df[col] = df[col].where(pd.notna(df[col]), None)
 
         # Boolean columns
         boolean_columns = [
@@ -580,7 +607,8 @@ class MISACRMTransformer:
 
         for col in boolean_columns:
             if col in df.columns:
-                df[col] = df[col].astype(bool, errors="ignore")
+                # FIXED: Xử lý null values cho boolean columns (NaN → False)
+                df[col] = df[col].fillna(False).astype(bool)
 
         df = self._add_etl_metadata(df)
 
