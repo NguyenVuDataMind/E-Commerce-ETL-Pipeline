@@ -444,7 +444,10 @@ class MISACRMExtractor:
         return all_records
 
     def extract_incremental_data(
-        self, endpoint_name: str, lookback_hours: int = None, modified_since: datetime = None
+        self,
+        endpoint_name: str,
+        lookback_hours: int = None,
+        modified_since: datetime = None,
     ) -> List[Dict]:
         """
         Lấy dữ liệu incremental (chỉ dữ liệu mới/thay đổi)
