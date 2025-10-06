@@ -241,7 +241,7 @@ def transform_tiktok_shop_full_load(**context):
                 transformed_df_clean[col] = transformed_df_clean[col].astype(str)
 
         # Fill NaN values với None để JSON serializable
-        transformed_df_clean = transformed_df_clean.fillna(value=None)
+        transformed_df_clean = transformed_df_clean.where(pd.notnull(transformed_df_clean), None)
         transformed_data = transformed_df_clean.to_dict("records")
 
         # Push to XCom
@@ -392,7 +392,7 @@ def transform_shopee_orders_full_load(**context):
                 df_clean[col] = df_clean[col].astype(str)
 
         # Fill NaN values với None để JSON serializable
-        df_clean = df_clean.fillna(value=None)
+        df_clean = df_clean.where(pd.notnull(df_clean), None)
         transformed_data = df_clean.to_dict("records")
 
         # Push to XCom

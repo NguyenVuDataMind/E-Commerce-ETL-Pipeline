@@ -11,6 +11,7 @@ import logging
 import json
 import os
 import sys
+import pandas as pd
 
 # Add project root to path
 sys.path.append("/opt/airflow/")
@@ -118,7 +119,7 @@ def transform_tiktok_shop_incremental(**context):
                 transformed_df_clean[col] = transformed_df_clean[col].astype(str)
 
         # Replace NaN values with None to make it JSON serializable
-        transformed_df_clean = transformed_df_clean.fillna(value=None)
+        transformed_df_clean = transformed_df_clean.where(pd.notnull(transformed_df_clean), None)
         transformed_data = transformed_df_clean.to_dict("records")
         context["ti"].xcom_push(
             key="tiktok_shop_incremental_transformed", value=transformed_data
