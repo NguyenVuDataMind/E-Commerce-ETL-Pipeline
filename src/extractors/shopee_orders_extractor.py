@@ -326,6 +326,8 @@ class ShopeeOrderExtractor:
         time_to: int,
         page_size: int = 100,
         time_range_field: str = "create_time",
+        cursor: Optional[str] = None,
+        order_status: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Lấy danh sách đơn hàng từ Shopee API
@@ -361,12 +363,16 @@ class ShopeeOrderExtractor:
             "time_to": int(time_to),
             "page_size": int(page_size),
         }
+        if cursor:
+            params["cursor"] = cursor
+        if order_status:
+            params["order_status"] = order_status
 
         try:
             # DEBUG: Log request details
             logger.debug(f"🔍 DEBUG: Getting order list from {time_from} to {time_to}")
             logger.debug(
-                f"🔍 DEBUG: Page size: {page_size}, Time field: {time_range_field}"
+                f"🔍 DEBUG: Page size: {page_size}, Time field: {time_range_field}, Cursor={cursor}"
             )
             logger.debug(f"🔍 DEBUG: URL: {url}")
 
@@ -387,8 +393,10 @@ class ShopeeOrderExtractor:
                 return None
 
             # DEBUG: Check response structure
-            response_data = data.get("response", {})
-            order_list = response_data.get("order_list", [])
+            response_data = data.get("response", {}) or {}
+            order_list = response_data.get("order_list", []) or []
+            more = bool(response_data.get("more"))
+            next_cursor = response_data.get("next_cursor") or ""
 
             logger.debug(
                 f"🔍 DEBUG: Response structure - response: {bool(response_data)}, order_list: {len(order_list)}"
@@ -399,7 +407,9 @@ class ShopeeOrderExtractor:
                 logger.warning(f"🔍 DEBUG: Full response: {data}")
                 return data  # Return empty response instead of None
 
-            logger.info(f"✅ Retrieved {len(order_list)} orders")
+            logger.info(
+                f"✅ Retrieved {len(order_list)} orders (more={more}, next_cursor={'Y' if next_cursor else 'N'})"
+            )
 
             # DEBUG: Log order IDs for verification
             if order_list:
@@ -438,14 +448,14 @@ class ShopeeOrderExtractor:
             logger.error("❌ Cannot get order detail: no valid token")
             return None
 
-        # Batch processing để không mất dữ liệu
-        if len(order_sn_list) <= 50:
-            # Xử lý trực tiếp nếu ≤ 50 orders
+        # Batch processing để không mất dữ liệu (giới hạn 15/req để tránh quá tải tham số SQL Server)
+        if len(order_sn_list) <= 15:
+            # Xử lý trực tiếp nếu ≤ 15 orders
             return self._get_order_detail_batch(order_sn_list)
 
-        # Chia thành batches 50 orders để xử lý tất cả
-        logger.info(f"📦 Splitting {len(order_sn_list)} orders into batches of 50")
-        batches = [order_sn_list[i : i + 50] for i in range(0, len(order_sn_list), 50)]
+        # Chia thành batches 15 orders để xử lý tất cả
+        logger.info(f"📦 Splitting {len(order_sn_list)} orders into batches of 15")
+        batches = [order_sn_list[i : i + 15] for i in range(0, len(order_sn_list), 15)]
         all_orders = []
 
         for batch_idx, batch in enumerate(batches):
@@ -654,33 +664,44 @@ class ShopeeOrderExtractor:
         end_timestamp = int(end_date.timestamp())
 
         chunk_orders = []
+        seen_order_sn = set()
         page_size = 100
-        offset = 0
+        current_cursor = None
 
         while True:
-            # Lấy danh sách order_sn cho chunk này
+            # Lấy danh sách order_sn cho chunk này (cursor pagination)
             order_list_response = self.get_order_list(
-                time_from=start_timestamp, time_to=end_timestamp, page_size=page_size
+                time_from=start_timestamp,
+                time_to=end_timestamp,
+                page_size=page_size,
+                time_range_field="create_time",
+                cursor=current_cursor,
             )
 
             if not order_list_response:
                 logger.error("❌ Failed to get order list for chunk")
                 break
 
-            order_list = order_list_response.get("response", {}).get("order_list", [])
+            resp = order_list_response.get("response", {}) or {}
+            order_list = resp.get("order_list", []) or []
+            more = bool(resp.get("more"))
+            next_cursor = resp.get("next_cursor") or None
 
             if not order_list:
                 logger.info("📭 No more orders found in chunk")
                 break
 
-            # Lấy order_sn để gọi get_order_detail
+            # Lấy order_sn để gọi get_order_detail, khử trùng trước khi gọi
             order_sn_list = [
                 order.get("order_sn") for order in order_list if order.get("order_sn")
             ]
+            unique_batch = [sn for sn in order_sn_list if sn not in seen_order_sn]
+            for sn in unique_batch:
+                seen_order_sn.add(sn)
 
-            if order_sn_list:
-                # Gọi get_order_detail để lấy chi tiết
-                detail_response = self.get_order_detail(order_sn_list)
+            if unique_batch:
+                # Gọi get_order_detail để lấy chi tiết (batch size 15)
+                detail_response = self.get_order_detail(unique_batch)
 
                 if detail_response:
                     orders_detail = detail_response.get("response", {}).get(
@@ -688,14 +709,16 @@ class ShopeeOrderExtractor:
                     )
                     chunk_orders.extend(orders_detail)
                     logger.info(
-                        f"✅ Processed {len(orders_detail)} orders in chunk (Chunk total: {len(chunk_orders)})"
+                        f"✅ Appended {len(orders_detail)} unique orders (Chunk total: {len(chunk_orders)})"
                     )
                 else:
                     logger.warning("⚠️ Failed to get order details, skipping batch")
 
-            # Kiểm tra nếu có more data
-            if not order_list_response.get("response", {}).get("more", False):
+            # Kiểm tra nếu có more data (cursor)
+            if not more or not next_cursor:
                 break
+
+            current_cursor = next_cursor
 
             # Rate limiting
             time.sleep(0.5)
@@ -726,9 +749,12 @@ class ShopeeOrderExtractor:
 
         logger.info(f"📅 Incremental range: {start_time} to {end_time}")
 
-        # Lấy danh sách order_sn trong khoảng thời gian
+        # Lấy danh sách order_sn trong khoảng thời gian (incremental theo update_time)
         order_list_response = self.get_order_list(
-            time_from=start_timestamp, time_to=end_timestamp, page_size=100
+            time_from=start_timestamp,
+            time_to=end_timestamp,
+            page_size=100,
+            time_range_field="update_time",
         )
 
         if not order_list_response:
@@ -750,9 +776,9 @@ class ShopeeOrderExtractor:
             logger.warning("⚠️ No valid order_sn found")
             return []
 
-        # Process in batches of 50 (API limit)
+        # Process in batches of 15 (giới hạn để tránh quá tải tham số SQL Server)
         all_orders = []
-        batch_size = 50
+        batch_size = 15
 
         for i in range(0, len(order_sn_list), batch_size):
             batch = order_sn_list[i : i + batch_size]

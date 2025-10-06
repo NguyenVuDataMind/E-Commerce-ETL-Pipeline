@@ -356,7 +356,7 @@ def extract_shopee_orders_full_load(**context):
 
 def transform_shopee_orders_full_load(**context):
     """
-    Transform dữ liệu Shopee Orders (Full Load)
+    Transform dữ liệu Shopee Orders (Full Load) → 12 bảng theo ERD
     """
     logger = logging.getLogger(__name__)
     logger.info("🔄 Starting Shopee Orders Full Load Transformation...")
@@ -374,35 +374,25 @@ def transform_shopee_orders_full_load(**context):
             logger.warning("No orders data to transform")
             return "No orders to transform"
 
-        # Transform data
+        # Transform data → 12 bảng
         transformer = ShopeeOrderTransformer()
+        tables_to_dfs = transformer.transform_orders_to_dataframes(orders_data)
 
-        # Transform to flat DataFrame (tương thích với loader hiện tại)
-        df = transformer.transform_orders_to_flat_dataframe(orders_data)
+        # Serialize từng bảng sang JSON-safe và đẩy XCom
+        serialized = {}
+        total_rows = 0
+        for name, df in tables_to_dfs.items():
+            payload_json = df.to_json(
+                orient="records", date_format="iso", date_unit="s"
+            )
+            serialized[name] = json.loads(payload_json)
+            total_rows += len(df)
 
-        logger.info(f"✅ Transformed {len(df)} orders")
-
-        # Convert DataFrame to dict for XCom
-        # FIXED: Convert Timestamp columns to string để tránh JSON serialization error
-        df_clean = df.copy()
-
-        # Convert all datetime/timestamp columns to string để JSON serializable
-        for col in df_clean.columns:
-            if df_clean[col].dtype == "datetime64[ns]":
-                df_clean[col] = df_clean[col].dt.strftime("%Y-%m-%d %H:%M:%S")
-            elif "timestamp" in str(df_clean[col].dtype).lower():
-                df_clean[col] = df_clean[col].astype(str)
-
-        # Fill NaN values với None để JSON serializable
-        df_clean = df_clean.where(pd.notnull(df_clean), None)
-        transformed_data = df_clean.to_dict("records")
-
-        # Push to XCom
         context["ti"].xcom_push(
-            key="shopee_orders_transformed_data", value=json.dumps(transformed_data)
+            key="shopee_orders_transformed_12_tables", value=json.dumps(serialized)
         )
 
-        return f"Successfully transformed {len(transformed_data)} orders"
+        return f"Successfully transformed Shopee full load into 12 tables, total {total_rows} rows"
 
     except Exception as e:
         logger.error(f"❌ Shopee Orders transformation failed: {str(e)}")
@@ -411,48 +401,38 @@ def transform_shopee_orders_full_load(**context):
 
 def load_shopee_orders_full_load(**context):
     """
-    Load dữ liệu Shopee Orders vào staging (Full Load)
+    Load dữ liệu Shopee Orders vào staging (Full Load) → 12 bảng
     """
     logger = logging.getLogger(__name__)
     logger.info("💾 Starting Shopee Orders Full Load Loading...")
 
     try:
-        # Pull transformed data from XCom
-        transformed_data_json = context["ti"].xcom_pull(
-            key="shopee_orders_transformed_data"
+        # Pull transformed data (12 bảng) từ XCom
+        transformed_json = context["ti"].xcom_pull(
+            key="shopee_orders_transformed_12_tables"
         )
-        if not transformed_data_json:
+        if not transformed_json:
             logger.warning("No transformed data found in XCom")
             return "No data to load"
 
-        transformed_data = json.loads(transformed_data_json)
+        transformed_dict = json.loads(transformed_json)
 
-        if not transformed_data:
-            logger.warning("No transformed data to load")
-            return "No data to load"
-
-        # Convert back to DataFrame
+        # Convert lại sang DataFrame
         import pandas as pd
 
-        df = pd.DataFrame(transformed_data)
+        tables_to_dfs = {k: pd.DataFrame(v) for k, v in transformed_dict.items()}
 
-        logger.info(f"📊 Loading {len(df)} records to staging...")
-
-        # Load data (replace mode for full load)
+        # Load theo thứ tự an toàn
         loader = ShopeeOrderLoader()
-        success = loader.load_flat_orders_dataframe(df, load_type="full")
+        success = loader.load_orders_full_load(tables_to_dfs)
 
         if success:
-            logger.info(f"✅ Successfully loaded {len(df)} records to staging")
-
-            # Get load statistics
             stats = loader.validate_data_integrity()
             logger.info(f"📊 Load statistics: {stats}")
-
-            return f"Successfully loaded {len(df)} records"
+            return "Successfully loaded Shopee 12 tables (full load)"
         else:
-            logger.error(f"❌ Failed to load {len(df)} records")
-            raise Exception(f"Failed to load {len(df)} records to staging")
+            logger.error("❌ Failed to load Shopee 12 tables")
+            raise Exception("Failed to load Shopee 12 tables")
 
     except Exception as e:
         logger.error(f"❌ Shopee Orders loading failed: {str(e)}")

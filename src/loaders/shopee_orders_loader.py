@@ -212,7 +212,7 @@ class ShopeeOrderLoader:
             # Convert datetime columns to timezone-naive
             df_export = self._convert_datetime_to_naive(df)
 
-            # Load to database
+            # Load to database (giới hạn chunksize nhỏ để tránh quá tải tham số ODBC/SQL Server)
             df_export.to_sql(
                 name=table_full_name.split(".")[1],  # Table name only
                 con=self.db_engine,
@@ -220,7 +220,7 @@ class ShopeeOrderLoader:
                 if_exists=if_exists,
                 index=False,
                 method="multi",
-                chunksize=1000,
+                chunksize=15,
             )
 
             logger.info(f"✅ Loaded {len(df)} rows to {table_full_name}")
@@ -467,7 +467,7 @@ class ShopeeOrderLoader:
             else:
                 if_exists = "append"  # Incremental: append new data
 
-            # Load to database
+            # Load to database (giới hạn chunksize nhỏ để tránh quá tải tham số ODBC/SQL Server)
             df_export.to_sql(
                 name=table_full_name.split(".")[1],
                 con=self.db_engine,
@@ -475,7 +475,7 @@ class ShopeeOrderLoader:
                 if_exists=if_exists,
                 index=False,
                 method="multi",
-                chunksize=1000,
+                chunksize=15,
             )
 
             logger.info(
