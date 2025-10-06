@@ -96,13 +96,17 @@ class ShopeeOrderExtractor:
 
                     # Fallback: nếu refresh_token trống → lấy từ .env và lưu lại DB
                     if not self.refresh_token and settings.shopee_refresh_token:
-                        logger.warning("⚠️ DB refresh_token is empty. Falling back to .env and persisting.")
+                        logger.warning(
+                            "⚠️ DB refresh_token is empty. Falling back to .env and persisting."
+                        )
                         self.refresh_token = settings.shopee_refresh_token
                         # Ghi lại DB để các lần sau dùng luôn
                         try:
                             self._save_tokens_to_db()
                         except Exception as _:
-                            logger.warning("⚠️ Could not persist fallback refresh_token; will continue in-memory.")
+                            logger.warning(
+                                "⚠️ Could not persist fallback refresh_token; will continue in-memory."
+                            )
 
                     return
         except Exception as e:
@@ -218,7 +222,9 @@ class ShopeeOrderExtractor:
         if not self.refresh_token:
             # Fallback: thử lấy từ .env nếu DB không có
             if settings.shopee_refresh_token:
-                logger.warning("⚠️ No refresh token in memory. Falling back to .env value.")
+                logger.warning(
+                    "⚠️ No refresh token in memory. Falling back to .env value."
+                )
                 self.refresh_token = settings.shopee_refresh_token
             else:
                 logger.error("❌ No refresh token available (DB and .env both empty)")
