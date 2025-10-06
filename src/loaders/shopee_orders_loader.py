@@ -565,7 +565,16 @@ class ShopeeOrderLoader:
             on_clause = " AND ".join(
                 [f"target.{pk} = source.{pk}" for pk in primary_keys]
             )
-            update_set_cols = [c for c in columns if c not in primary_keys]
+            # Loại bỏ các cột ETL khỏi auto-update để tránh set trùng và kiểm soát rõ ràng
+            etl_cols = {
+                "etl_created_at",
+                "etl_updated_at",
+                "etl_batch_id",
+                "etl_source",
+            }
+            update_set_cols = [
+                c for c in columns if c not in primary_keys and c not in etl_cols
+            ]
 
             update_guard = None
             if "update_time" in df_export.columns:
@@ -590,10 +599,14 @@ class ShopeeOrderLoader:
                 else:
                     update_guard = "(" + " OR ".join(extra_changes) + ")"
 
-            update_set_sql = ",\n                            ".join(
-                [f"target.{c} = source.{c}" for c in update_set_cols]
-                + ["target.etl_updated_at = GETUTCDATE()"]
-            )
+            # Xây dựng SET: dữ liệu nghiệp vụ cập nhật từ source; etl_batch_id/etl_source (nếu có) và etl_updated_at dùng thời gian hiện tại
+            set_clauses = [f"target.{c} = source.{c}" for c in update_set_cols]
+            if "etl_batch_id" in columns:
+                set_clauses.append("target.etl_batch_id = source.etl_batch_id")
+            if "etl_source" in columns:
+                set_clauses.append("target.etl_source = source.etl_source")
+            set_clauses.append("target.etl_updated_at = GETUTCDATE()")
+            update_set_sql = ",\n                            ".join(set_clauses)
             insert_values_sql = ", ".join([f"source.{c}" for c in columns])
 
             # Chia lô nhỏ để tránh câu lệnh quá dài
@@ -648,112 +661,4 @@ class ShopeeOrderLoader:
             logger.error(f"❌ Failed to upsert Shopee.{table_name}: {str(e)}")
             return False
 
-    def load_flat_orders_dataframe(
-        self, df: pd.DataFrame, load_type: str = "full"
-    ) -> bool:
-        """
-        Load DataFrame phẳng vào bảng orders chính (tương thích với TikTok Shop pattern)
-
-        Args:
-            df: DataFrame phẳng chứa orders
-            load_type: 'full' hoặc 'incremental'
-
-        Returns:
-            True nếu thành công, False nếu thất bại
-        """
-        if df.empty:
-            logger.info("📭 No data to load")
-            return True
-
-        try:
-            # Chuẩn hóa datetime: chuyển epoch/ISO -> datetime, rồi bỏ timezone
-            df_export = self._normalize_datetime_fields(df)
-            df_export = self._convert_datetime_to_naive(df_export)
-
-            table_full_name = self.table_mappings["orders"]
-
-            if load_type == "full":
-                # Truncate table trước khi load
-                if not self.truncate_table("orders"):
-                    return False
-
-                if_exists = "append"
-            else:
-                if_exists = "append"  # Incremental: append new data
-
-            # Load to database (giới hạn chunksize nhỏ để tránh quá tải tham số ODBC/SQL Server)
-            df_export.to_sql(
-                name=table_full_name.split(".")[1],
-                con=self.db_engine,
-                schema=table_full_name.split(".")[0],
-                if_exists=if_exists,
-                index=False,
-                method="multi",
-                chunksize=15,
-            )
-
-            logger.info(
-                f"✅ Loaded {len(df)} orders ({load_type} load) to {table_full_name}"
-            )
-            return True
-
-        except Exception as e:
-            logger.error(f"❌ Failed to load orders DataFrame: {str(e)}")
-            return False
-
-    def get_table_row_count(self, table_name: str) -> int:
-        """
-        Lấy số dòng trong table
-
-        Args:
-            table_name: Tên table
-
-        Returns:
-            Số dòng trong table
-        """
-        table_full_name = self.table_mappings.get(table_name)
-        if not table_full_name:
-            return 0
-
-        try:
-            with self.db_engine.begin() as conn:
-                result = conn.execute(text(f"SELECT COUNT(*) FROM {table_full_name}"))
-                count = result.scalar()
-                return count
-        except Exception as e:
-            logger.error(f"❌ Failed to get row count for {table_full_name}: {str(e)}")
-            return 0
-
-    def validate_data_integrity(self) -> Dict[str, Any]:
-        """
-        Kiểm tra tính toàn vẹn dữ liệu sau khi load
-
-        Returns:
-            Dictionary chứa kết quả validation
-        """
-        logger.info("🔍 Validating data integrity...")
-
-        validation_results = {}
-
-        for table_name, table_full_name in self.table_mappings.items():
-            try:
-                row_count = self.get_table_row_count(table_name)
-                validation_results[table_name] = {
-                    "row_count": row_count,
-                    "status": "success" if row_count >= 0 else "error",
-                }
-            except Exception as e:
-                validation_results[table_name] = {
-                    "row_count": 0,
-                    "status": "error",
-                    "error": str(e),
-                }
-
-        # Log validation results
-        for table_name, result in validation_results.items():
-            if result["status"] == "success":
-                logger.info(f"✅ {table_name}: {result['row_count']} rows")
-            else:
-                logger.error(f"❌ {table_name}: {result.get('error', 'Unknown error')}")
-
-        return validation_results
+    # Các tiện ích kiểm thử/đếm bản ghi không còn dùng trong pipeline chính đã được loại bỏ

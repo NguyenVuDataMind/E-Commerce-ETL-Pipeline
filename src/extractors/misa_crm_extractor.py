@@ -474,31 +474,52 @@ class MISACRMExtractor:
                 f"Lấy dữ liệu incremental từ {endpoint_name} (lookback: {lookback_hours} giờ, cutoff: {cutoff_time.isoformat()})"
             )
 
-        # TODO: Cải thiện - thay vì lấy tất cả dữ liệu rồi filter, nên filter ngay ở API level
-        # Hiện tại vẫn phải lấy tất cả dữ liệu (với giới hạn trang để tránh quá tải)
-        all_data = self.extract_all_data_from_endpoint(endpoint_name, max_pages=10)
+        # Lấy dữ liệu với giới hạn trang nhỏ cho incremental
+        # Lý do: tránh kéo toàn bộ và treo task khi không có thay đổi lớn
+        all_data = self.extract_all_data_from_endpoint(endpoint_name, max_pages=3)
 
         if not all_data:
             return []
 
-        # Lọc theo modified_date
+        # Lọc theo mốc thời gian
         filtered_data = []
 
-        for record in all_data:
-            modified_date_str = record.get("modified_date")
-            if modified_date_str:
+        # Đối với 4 endpoint (trừ sale_orders): lọc theo modified_date trong 15 phút gần nhất
+        if endpoint_name in {"customers", "contacts", "stocks", "products"}:
+            for record in all_data:
+                ts = record.get("modified_date") or record.get("ModifiedDate")
+                if not ts:
+                    continue
                 try:
-                    modified_date = datetime.fromisoformat(
-                        modified_date_str.replace("Z", "+00:00")
-                    )
-                    if modified_date >= cutoff_time:
-                        filtered_data.append(record)
-                except:
-                    # Bao gồm record nếu không parse được date
+                    dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                except Exception:
+                    continue
+                if dt >= cutoff_time:
                     filtered_data.append(record)
-            else:
-                # Bao gồm record nếu không có modified_date
-                filtered_data.append(record)
+        # Đối với sale_orders: ưu tiên theo thời gian tạo/cập nhật đơn thay vì lấy hết
+        elif endpoint_name == "sale_orders":
+            time_fields_priority = [
+                "updated_date",
+                "modified_date",
+                "order_updated_date",
+                "order_date",
+                "created_date",
+            ]
+            for record in all_data:
+                dt = None
+                for f in time_fields_priority:
+                    ts = record.get(f) or record.get(f.capitalize())
+                    if ts:
+                        try:
+                            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                            break
+                        except Exception:
+                            continue
+                if dt and dt >= cutoff_time:
+                    filtered_data.append(record)
+        else:
+            # Mặc định: giữ nguyên
+            filtered_data = all_data
 
         logger.info(f"Lọc incremental: {len(filtered_data)}/{len(all_data)} records")
         return filtered_data
