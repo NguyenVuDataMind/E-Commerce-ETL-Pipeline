@@ -114,7 +114,7 @@ class ShopeeOrderLoader:
             return False
 
         try:
-            with self.db_engine.connect() as conn:
+            with self.db_engine.begin() as conn:
                 schema, table = table_full_name.split(".")
 
                 # Với SQL Server, TRUNCATE TABLE không thể dùng khi có FK tham chiếu.
@@ -128,7 +128,6 @@ class ShopeeOrderLoader:
                 # Thực hiện DELETE thay cho TRUNCATE để không vướng FK
                 delete_sql = f"DELETE FROM {table_full_name}"
                 result = conn.execute(text(delete_sql))
-                conn.commit()
 
                 logger.info(
                     f"✅ Cleared table via DELETE: {table_full_name} (rows affected: {result.rowcount})"
@@ -421,9 +420,9 @@ class ShopeeOrderLoader:
               );
             """
 
-            with self.db_engine.connect() as conn:
+            with self.db_engine.begin() as conn:
                 conn.execute(text(merge_sql))
-                # Dọn dẹp temp table
+                # Dọn dẹp temp table (trong cùng transaction)
                 conn.execute(text(f"DROP TABLE [{schema}].[{temp_table}]"))
 
             logger.info(
@@ -502,7 +501,7 @@ class ShopeeOrderLoader:
             return 0
 
         try:
-            with self.db_engine.connect() as conn:
+            with self.db_engine.begin() as conn:
                 result = conn.execute(text(f"SELECT COUNT(*) FROM {table_full_name}"))
                 count = result.scalar()
                 return count

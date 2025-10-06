@@ -513,5 +513,5 @@ with DAG(
         bash_command='echo "Sequential Full Load ETL completed: TikTok → Shopee → MISA."',
     )
 
-    # SEQUENTIAL execution: TikTok Shop → Shopee Orders → MISA CRM
-    start_task >> tiktok_shop_group >> shopee_orders_group >> misa_crm_group >> end_task
+    # SEQUENTIAL execution: Shopee Orders → TikTok Shop → MISA CRM
+    start_task >> shopee_orders_group >> tiktok_shop_group >> misa_crm_group >> end_task
