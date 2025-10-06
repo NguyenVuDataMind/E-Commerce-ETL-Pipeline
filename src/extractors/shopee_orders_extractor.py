@@ -93,6 +93,17 @@ class ShopeeOrderExtractor:
                     self.access_token = getattr(row, "access_token", None)
                     self.refresh_token = getattr(row, "refresh_token", None)
                     self.token_expires_at = getattr(row, "expires_at", None)
+
+                    # Fallback: nếu refresh_token trống → lấy từ .env và lưu lại DB
+                    if not self.refresh_token and settings.shopee_refresh_token:
+                        logger.warning("⚠️ DB refresh_token is empty. Falling back to .env and persisting.")
+                        self.refresh_token = settings.shopee_refresh_token
+                        # Ghi lại DB để các lần sau dùng luôn
+                        try:
+                            self._save_tokens_to_db()
+                        except Exception as _:
+                            logger.warning("⚠️ Could not persist fallback refresh_token; will continue in-memory.")
+
                     return
         except Exception as e:
             logger.error(f"❌ Lỗi khi đọc Shopee tokens từ DB: {e}")
@@ -205,8 +216,13 @@ class ShopeeOrderExtractor:
             True nếu thành công, False nếu thất bại
         """
         if not self.refresh_token:
-            logger.error("❌ No refresh token available")
-            return False
+            # Fallback: thử lấy từ .env nếu DB không có
+            if settings.shopee_refresh_token:
+                logger.warning("⚠️ No refresh token in memory. Falling back to .env value.")
+                self.refresh_token = settings.shopee_refresh_token
+            else:
+                logger.error("❌ No refresh token available (DB and .env both empty)")
+                return False
 
         path = "/api/v2/auth/access_token/get"
         timestamp = int(time.time())

@@ -174,8 +174,8 @@ class TikTokShopOrderLoader:
 
             logger.info(f"Loading {len(df)} rows incrementally with UPSERT logic...")
 
-            # Prepare the data
-            df_prepared = self._prepare_dataframe_for_load(df)
+            # Prepare the data (incremental cần chuẩn hóa timestamp về datetime)
+            df_prepared = self._prepare_dataframe_for_upsert(df)
             if df_prepared is None:
                 return False
 
