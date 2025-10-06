@@ -334,6 +334,7 @@ class ShopeeOrderTransformer:
                         {
                             "order_sn": order_sn,
                             "order_item_id": self._safe_int(item.get("order_item_id")),
+                            "model_id": self._safe_int(item.get("model_id")),
                             "location_id": location_id,
                         }
                     )
@@ -342,6 +343,7 @@ class ShopeeOrderTransformer:
                     {
                         "order_sn": order_sn,
                         "order_item_id": self._safe_int(item.get("order_item_id")),
+                        "model_id": self._safe_int(item.get("model_id")),
                         "location_id": product_location_id,
                     }
                 )

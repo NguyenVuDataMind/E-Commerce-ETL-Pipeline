@@ -724,7 +724,7 @@ CREATE TABLE staging.shopee_order_items (
     etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'shopee_api',
-    PRIMARY KEY (order_sn, order_item_id),
+    PRIMARY KEY (order_sn, order_item_id, model_id),
     FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
 );
 GO
@@ -733,6 +733,7 @@ GO
 CREATE TABLE staging.shopee_order_item_locations (
     order_sn NVARCHAR(50) NOT NULL,
     order_item_id BIGINT NOT NULL,
+    model_id BIGINT NOT NULL,
     location_id NVARCHAR(100) NOT NULL,
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
@@ -740,8 +741,8 @@ CREATE TABLE staging.shopee_order_item_locations (
     etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'shopee_api',
-    PRIMARY KEY (order_sn, order_item_id, location_id),
-    FOREIGN KEY (order_sn, order_item_id) REFERENCES staging.shopee_order_items(order_sn, order_item_id) ON DELETE CASCADE
+    PRIMARY KEY (order_sn, order_item_id, model_id, location_id),
+    FOREIGN KEY (order_sn, order_item_id, model_id) REFERENCES staging.shopee_order_items(order_sn, order_item_id, model_id) ON DELETE CASCADE
 );
 GO
 
@@ -788,7 +789,7 @@ CREATE TABLE staging.shopee_package_items (
     etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, package_number, order_item_id),
     FOREIGN KEY (order_sn, package_number) REFERENCES staging.shopee_packages(order_sn, package_number) ON DELETE NO ACTION,
-    FOREIGN KEY (order_sn, order_item_id) REFERENCES staging.shopee_order_items(order_sn, order_item_id) ON DELETE NO ACTION
+    FOREIGN KEY (order_sn, order_item_id, model_id) REFERENCES staging.shopee_order_items(order_sn, order_item_id, model_id) ON DELETE NO ACTION
 );
 GO
 
