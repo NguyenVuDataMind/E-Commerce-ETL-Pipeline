@@ -314,25 +314,121 @@ class ShopeeOrderLoader:
             return True
 
         try:
-            # Convert datetime columns to timezone-naive
+            # Chuẩn hóa datetime để tránh lỗi khi ghi DB
             df_export = self._convert_datetime_to_naive(df)
 
-            # Load to main orders table with UPSERT logic
-            table_full_name = self.table_mappings["orders"]
+            target_full = self.table_mappings["orders"]
+            schema, target_table = target_full.split(".")
 
-            # Use pandas to_sql with if_exists='append' for now
-            # In production, implement proper UPSERT with SQL MERGE statement
-            df_export.to_sql(
-                name=table_full_name.split(".")[1],
-                con=self.db_engine,
-                schema=table_full_name.split(".")[0],
-                if_exists="append",
-                index=False,
-                method="multi",
-                chunksize=1000,
+            # 1) Ghi batch vào bảng tạm trong cùng schema (tránh lỗi ODBC bằng chunksize nhỏ)
+            temp_table = (
+                f"temp_shopee_orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             )
 
-            logger.info(f"✅ Loaded {len(df)} incremental orders to {table_full_name}")
+            df_export.to_sql(
+                name=temp_table,
+                con=self.db_engine,
+                schema=schema,
+                if_exists="replace",
+                index=False,
+                method="multi",
+                chunksize=15,
+            )
+
+            # 2) MERGE (UPSERT) theo khóa order_sn, chỉ UPDATE khi source.update_time mới hơn
+            merge_sql = f"""
+            MERGE [{schema}].[{target_table}] AS target
+            USING [{schema}].[{temp_table}] AS source
+              ON target.order_sn = source.order_sn
+
+            WHEN MATCHED AND (
+                 ISNULL(target.update_time, '1900-01-01') < ISNULL(source.update_time, '1900-01-01')
+              OR ISNULL(target.order_status,'') <> ISNULL(source.order_status,'')
+              OR ISNULL(target.shipping_carrier,'') <> ISNULL(source.shipping_carrier,'')
+            ) THEN UPDATE SET
+              target.region = source.region,
+              target.currency = source.currency,
+              target.cod = source.cod,
+              target.total_amount = source.total_amount,
+              target.order_status = source.order_status,
+              target.shipping_carrier = source.shipping_carrier,
+              target.payment_method = source.payment_method,
+              target.estimated_shipping_fee = source.estimated_shipping_fee,
+              target.message_to_seller = source.message_to_seller,
+              target.create_time = source.create_time,
+              target.update_time = source.update_time,
+              target.days_to_ship = source.days_to_ship,
+              target.ship_by_date = source.ship_by_date,
+              target.buyer_user_id = source.buyer_user_id,
+              target.buyer_username = source.buyer_username,
+              target.actual_shipping_fee = source.actual_shipping_fee,
+              target.actual_shipping_fee_confirmed = source.actual_shipping_fee_confirmed,
+              target.goods_to_declare = source.goods_to_declare,
+              target.note = source.note,
+              target.note_update_time = source.note_update_time,
+              target.pay_time = source.pay_time,
+              target.dropshipper = source.dropshipper,
+              target.dropshipper_phone = source.dropshipper_phone,
+              target.split_up = source.split_up,
+              target.buyer_cancel_reason = source.buyer_cancel_reason,
+              target.cancel_by = source.cancel_by,
+              target.cancel_reason = source.cancel_reason,
+              target.buyer_cpf_id = source.buyer_cpf_id,
+              target.fulfillment_flag = source.fulfillment_flag,
+              target.pickup_done_time = source.pickup_done_time,
+              target.reverse_shipping_fee = source.reverse_shipping_fee,
+              target.order_chargeable_weight_gram = source.order_chargeable_weight_gram,
+              target.prescription_check_status = source.prescription_check_status,
+              target.pharmacist_name = source.pharmacist_name,
+              target.prescription_approval_time = source.prescription_approval_time,
+              target.prescription_rejection_time = source.prescription_rejection_time,
+              target.edt_from = source.edt_from,
+              target.edt_to = source.edt_to,
+              target.booking_sn = source.booking_sn,
+              target.advance_package = source.advance_package,
+              target.return_request_due_date = source.return_request_due_date,
+              target.is_buyer_shop_collection = source.is_buyer_shop_collection,
+              target.etl_updated_at = GETUTCDATE()
+
+            WHEN NOT MATCHED BY TARGET THEN
+              INSERT (
+                order_sn, region, currency, cod, total_amount, order_status, shipping_carrier,
+                payment_method, estimated_shipping_fee, message_to_seller, create_time, update_time,
+                days_to_ship, ship_by_date, buyer_user_id, buyer_username, actual_shipping_fee,
+                actual_shipping_fee_confirmed, goods_to_declare, note, note_update_time, pay_time,
+                dropshipper, dropshipper_phone, split_up, buyer_cancel_reason, cancel_by, cancel_reason,
+                buyer_cpf_id, fulfillment_flag, pickup_done_time, reverse_shipping_fee,
+                order_chargeable_weight_gram, prescription_check_status, pharmacist_name,
+                prescription_approval_time, prescription_rejection_time, edt_from, edt_to, booking_sn,
+                advance_package, return_request_due_date, is_buyer_shop_collection,
+                etl_batch_id, etl_created_at, etl_updated_at, etl_source
+              )
+              VALUES (
+                source.order_sn, source.region, source.currency, source.cod, source.total_amount,
+                source.order_status, source.shipping_carrier, source.payment_method,
+                source.estimated_shipping_fee, source.message_to_seller, source.create_time,
+                source.update_time, source.days_to_ship, source.ship_by_date, source.buyer_user_id,
+                source.buyer_username, source.actual_shipping_fee, source.actual_shipping_fee_confirmed,
+                source.goods_to_declare, source.note, source.note_update_time, source.pay_time,
+                source.dropshipper, source.dropshipper_phone, source.split_up, source.buyer_cancel_reason,
+                source.cancel_by, source.cancel_reason, source.buyer_cpf_id, source.fulfillment_flag,
+                source.pickup_done_time, source.reverse_shipping_fee, source.order_chargeable_weight_gram,
+                source.prescription_check_status, source.pharmacist_name,
+                source.prescription_approval_time, source.prescription_rejection_time,
+                source.edt_from, source.edt_to, source.booking_sn, source.advance_package,
+                source.return_request_due_date, source.is_buyer_shop_collection,
+                source.etl_batch_id, source.etl_created_at, source.etl_updated_at, source.etl_source
+              );
+            """
+
+            with self.db_engine.connect() as conn:
+                conn.execute(text(merge_sql))
+                # Dọn dẹp temp table
+                conn.execute(text(f"DROP TABLE [{schema}].[{temp_table}]"))
+
+            logger.info(
+                f"✅ Upserted {len(df_export)} incremental orders into {target_full} via MERGE"
+            )
             return True
 
         except Exception as e:
