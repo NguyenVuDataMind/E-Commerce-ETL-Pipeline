@@ -392,7 +392,7 @@ def transform_shopee_orders_full_load(**context):
                 df_clean[col] = df_clean[col].astype(str)
 
         # Fill NaN values với None để JSON serializable
-        df_clean = df_clean.fillna(None)
+        df_clean = df_clean.fillna(value=None)
         transformed_data = df_clean.to_dict("records")
 
         # Push to XCom
