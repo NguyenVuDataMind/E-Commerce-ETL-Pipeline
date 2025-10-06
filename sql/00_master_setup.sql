@@ -787,7 +787,7 @@ CREATE TABLE staging.shopee_package_items (
     etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'shopee_api',
-    PRIMARY KEY (order_sn, package_number, order_item_id),
+    PRIMARY KEY (order_sn, package_number, order_item_id, model_id),
     FOREIGN KEY (order_sn, package_number) REFERENCES staging.shopee_packages(order_sn, package_number) ON DELETE NO ACTION,
     FOREIGN KEY (order_sn, order_item_id, model_id) REFERENCES staging.shopee_order_items(order_sn, order_item_id, model_id) ON DELETE NO ACTION
 );
