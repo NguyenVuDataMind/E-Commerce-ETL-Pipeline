@@ -241,7 +241,9 @@ def transform_tiktok_shop_full_load(**context):
                 transformed_df_clean[col] = transformed_df_clean[col].astype(str)
 
         # Fill NaN values với None để JSON serializable
-        transformed_df_clean = transformed_df_clean.where(pd.notnull(transformed_df_clean), None)
+        transformed_df_clean = transformed_df_clean.where(
+            pd.notnull(transformed_df_clean), None
+        )
         transformed_data = transformed_df_clean.to_dict("records")
 
         # Push to XCom
