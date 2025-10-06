@@ -175,7 +175,7 @@ class TikTokShopOrderLoader:
 
             logger.info(f"Loading {len(df)} rows incrementally with UPSERT logic...")
 
-            # Prepare the data (incremental cần chuẩn hóa timestamp về datetime)
+            # Prepare the data (chuẩn hóa timestamp về datetime để khớp schema SQL Server)
             df_prepared = self._prepare_dataframe_for_upsert(df)
             if df_prepared is None:
                 return False
@@ -186,6 +186,54 @@ class TikTokShopOrderLoader:
         except Exception as e:
             logger.error(f"Error in incremental load: {str(e)}")
             return False
+
+    def _prepare_dataframe_for_upsert(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """
+        Chuẩn hóa DataFrame trước khi UPSERT:
+          - Chuyển các cột thời gian từ epoch (giây) sang pandas datetime (UTC)
+          - Chuẩn hóa kiểu dữ liệu cho phù hợp schema staging
+        """
+        try:
+            prepared = df.copy()
+
+            # Các cột thời gian của TikTok thường là epoch giây
+            epoch_cols = [
+                "create_time",
+                "update_time",
+                "paid_time",
+                "rts_time",
+                "shipping_due_time",
+                "delivery_due_time",
+                "collection_due_time",
+            ]
+
+            for col in epoch_cols:
+                if col in prepared.columns:
+                    # Chỉ chuyển nếu là số; tránh chuyển lại các cột đã là datetime
+                    if pd.api.types.is_integer_dtype(
+                        prepared[col]
+                    ) or pd.api.types.is_float_dtype(prepared[col]):
+                        prepared[col] = pd.to_datetime(
+                            prepared[col], unit="s", utc=True
+                        )
+
+            # Bắt buộc có etl timestamps ở dạng datetime
+            for etl_col in ["etl_created_at", "etl_updated_at"]:
+                if (
+                    etl_col in prepared.columns
+                    and not pd.api.types.is_datetime64_any_dtype(prepared[etl_col])
+                ):
+                    prepared[etl_col] = pd.to_datetime(
+                        prepared[etl_col], utc=True, errors="coerce"
+                    )
+
+            # Chuẩn hóa chuỗi: thay 'nan' thành None để SQL friendly
+            prepared = prepared.where(pd.notnull(prepared), None)
+
+            return prepared
+        except Exception as e:
+            logger.error(f"Error in _prepare_dataframe_for_upsert: {e}")
+            return None
 
     def _upsert_orders(self, df: pd.DataFrame) -> bool:
         """

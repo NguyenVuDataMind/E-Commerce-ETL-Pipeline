@@ -10,7 +10,7 @@ import hmac
 import hashlib
 import time
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 import logging
 import sys
@@ -196,7 +196,8 @@ class ShopeeOrderExtractor:
             if response.status_code == 200 and not response_json.get("error"):
                 self.access_token = response_json.get("access_token")
                 self.refresh_token = response_json.get("refresh_token")
-                self.token_expires_at = datetime.now() + timedelta(
+                # Lưu hạn token theo UTC để tránh lệch múi giờ
+                self.token_expires_at = datetime.now(timezone.utc) + timedelta(
                     seconds=response_json.get("expire_in", 14400)
                 )
 
@@ -264,7 +265,8 @@ class ShopeeOrderExtractor:
             if response.status_code == 200 and not response_json.get("error"):
                 self.access_token = response_json.get("access_token")
                 self.refresh_token = response_json.get("refresh_token")
-                self.token_expires_at = datetime.now() + timedelta(
+                # Lưu hạn token theo UTC để tránh lệch múi giờ
+                self.token_expires_at = datetime.now(timezone.utc) + timedelta(
                     seconds=response_json.get("expire_in", 14400)
                 )
 
@@ -296,9 +298,17 @@ class ShopeeOrderExtractor:
         if not self.token_expires_at:
             return True
 
-        # Thêm buffer 5 phút trước khi hết hạn để refresh sớm
-        buffer_time = timedelta(minutes=5)
-        return datetime.now() >= (self.token_expires_at - buffer_time)
+        # Thêm buffer 20 phút trước khi hết hạn để refresh sớm
+        buffer_time = timedelta(minutes=20)
+        # So sánh theo UTC để tránh sai lệch múi giờ
+        now_utc = datetime.now(timezone.utc)
+        # Nếu token_expires_at (từ DB) là naive, giả định nó là UTC
+        expires_at_utc = (
+            self.token_expires_at.replace(tzinfo=timezone.utc)
+            if getattr(self.token_expires_at, "tzinfo", None) is None
+            else self.token_expires_at
+        )
+        return now_utc >= (expires_at_utc - buffer_time)
 
     def _ensure_valid_token(self) -> bool:
         """
@@ -741,13 +751,13 @@ class ShopeeOrderExtractor:
             f"🔄 Starting Shopee incremental extraction: {minutes_back} minutes back"
         )
 
-        end_time = datetime.now()
-        start_time = end_time - timedelta(minutes=minutes_back)
+        # Dùng epoch UTC để tránh sai lệch múi giờ
+        end_timestamp = int(time.time())
+        start_timestamp = end_timestamp - (minutes_back * 60)
 
-        start_timestamp = int(start_time.timestamp())
-        end_timestamp = int(end_time.timestamp())
-
-        logger.info(f"📅 Incremental range: {start_time} to {end_time}")
+        logger.info(
+            f"📅 Incremental range (UTC epoch): from {start_timestamp} to {end_timestamp} (lookback {minutes_back}m)"
+        )
 
         # Lấy danh sách order_sn trong khoảng thời gian (incremental theo update_time)
         order_list_response = self.get_order_list(
