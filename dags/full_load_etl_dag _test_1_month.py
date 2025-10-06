@@ -227,9 +227,21 @@ def transform_tiktok_shop_full_load(**context):
 
         logger.info(f"✅ Transformation complete: {len(transformed_df)} records")
 
-        # Convert to dict for XCom (handle NaN values)
-        # FIXED: Sử dụng fillna với value cụ thể thay vì None
-        transformed_df_clean = transformed_df
+        # Convert to dict for XCom (handle NaN values và Timestamp serialization)
+        # FIXED: Convert Timestamp columns to string để tránh JSON serialization error
+        transformed_df_clean = transformed_df.copy()
+
+        # Convert all datetime/timestamp columns to string để JSON serializable
+        for col in transformed_df_clean.columns:
+            if transformed_df_clean[col].dtype == "datetime64[ns]":
+                transformed_df_clean[col] = transformed_df_clean[col].dt.strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            elif "timestamp" in str(transformed_df_clean[col].dtype).lower():
+                transformed_df_clean[col] = transformed_df_clean[col].astype(str)
+
+        # Fill NaN values với None để JSON serializable
+        transformed_df_clean = transformed_df_clean.fillna(None)
         transformed_data = transformed_df_clean.to_dict("records")
 
         # Push to XCom
@@ -369,7 +381,19 @@ def transform_shopee_orders_full_load(**context):
         logger.info(f"✅ Transformed {len(df)} orders")
 
         # Convert DataFrame to dict for XCom
-        transformed_data = df.to_dict("records")
+        # FIXED: Convert Timestamp columns to string để tránh JSON serialization error
+        df_clean = df.copy()
+
+        # Convert all datetime/timestamp columns to string để JSON serializable
+        for col in df_clean.columns:
+            if df_clean[col].dtype == "datetime64[ns]":
+                df_clean[col] = df_clean[col].dt.strftime("%Y-%m-%d %H:%M:%S")
+            elif "timestamp" in str(df_clean[col].dtype).lower():
+                df_clean[col] = df_clean[col].astype(str)
+
+        # Fill NaN values với None để JSON serializable
+        df_clean = df_clean.fillna(None)
+        transformed_data = df_clean.to_dict("records")
 
         # Push to XCom
         context["ti"].xcom_push(
@@ -504,8 +528,8 @@ with DAG(
 
     end_task = BashOperator(
         task_id="end_full_load",
-        bash_command='echo "Sequential Full Load ETL completed: MISA → TikTok → Shopee."',
+        bash_command='echo "Sequential Full Load ETL completed: TikTok → Shopee → MISA."',
     )
 
-    # SEQUENTIAL execution: MISA CRM → TikTok Shop → Shopee Orders
-    start_task >> misa_crm_group >> tiktok_shop_group >> shopee_orders_group >> end_task
+    # SEQUENTIAL execution: TikTok Shop → Shopee Orders → MISA CRM
+    start_task >> tiktok_shop_group >> shopee_orders_group >> misa_crm_group >> end_task

@@ -6,7 +6,7 @@ Thiết kế để chạy sau khi Full Load đã hoàn thành
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.operators.dummy import DummyOperator
+from airflow.operators.empty import EmptyOperator
 import logging
 import json
 import os
@@ -105,8 +105,20 @@ def transform_tiktok_shop_incremental(**context):
         logger.info(f"✅ Transformed {len(transformed_df)} incremental records")
 
         # Convert DataFrame to dict for XCom
+        # FIXED: Convert Timestamp columns to string để tránh JSON serialization error
+        transformed_df_clean = transformed_df.copy()
+
+        # Convert all datetime/timestamp columns to string để JSON serializable
+        for col in transformed_df_clean.columns:
+            if transformed_df_clean[col].dtype == "datetime64[ns]":
+                transformed_df_clean[col] = transformed_df_clean[col].dt.strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            elif "timestamp" in str(transformed_df_clean[col].dtype).lower():
+                transformed_df_clean[col] = transformed_df_clean[col].astype(str)
+
         # Replace NaN values with None to make it JSON serializable
-        transformed_df_clean = transformed_df.fillna(None)
+        transformed_df_clean = transformed_df_clean.fillna(None)
         transformed_data = transformed_df_clean.to_dict("records")
         context["ti"].xcom_push(
             key="tiktok_shop_incremental_transformed", value=transformed_data
@@ -450,7 +462,7 @@ def load_shopee_orders_incremental(**context):
 # ========================
 
 # Start task
-start_incremental = DummyOperator(task_id="start_incremental", dag=dag)
+start_incremental = EmptyOperator(task_id="start_incremental", dag=dag)
 
 # TikTok Shop Incremental Pipeline
 tiktok_extract_incremental = PythonOperator(
@@ -510,7 +522,7 @@ shopee_load_incremental = PythonOperator(
 )
 
 # End task
-end_incremental = DummyOperator(task_id="end_incremental", dag=dag)
+end_incremental = EmptyOperator(task_id="end_incremental", dag=dag)
 
 # ========================
 # TASK DEPENDENCIES
