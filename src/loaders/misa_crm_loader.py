@@ -247,15 +247,9 @@ class MISACRMLoader:
 
     def _upsert_records(self, endpoint: str, df: pd.DataFrame) -> bool:
         """
-        Perform UPSERT operation using SQL MERGE statement
-        Similar to TikTok Shop pattern but adapted for MISA CRM endpoints
-
-        Args:
-            endpoint: MISA CRM endpoint name
-            df: Prepared DataFrame
-
-        Returns:
-            bool: True if successful, False otherwise
+        Thực hiện UPSERT bằng MERGE + VALUES theo lô (không tạo bảng tạm trong DB).
+        - NOT MATCHED -> INSERT
+        - MATCHED AND dữ liệu mới hơn -> UPDATE
         """
         if endpoint not in self.table_mappings:
             logger.error(f"No table mapping found for endpoint: {endpoint}")
@@ -264,65 +258,108 @@ class MISACRMLoader:
         table_full_name = self.table_mappings[endpoint]
         table_info = self._get_table_info(table_full_name)
 
+        # Lấy khóa chính (hỗ trợ khóa đơn hoặc khóa kép)
+        primary_keys = self._get_primary_key_for_endpoint(endpoint)
+        if isinstance(primary_keys, str):
+            primary_keys = [primary_keys]
+
+        # Cột guard để xác định mới hơn
+        update_condition = self._get_update_condition_for_endpoint(endpoint)
+
+        # Danh sách cột theo DataFrame (giữ nguyên thứ tự)
+        columns: List[str] = df.columns.tolist()
+
+        # Bảo đảm các cột khóa có trong DataFrame
+        for pk in primary_keys:
+            if pk not in columns:
+                logger.error(
+                    f"Primary key column '{pk}' not found in DataFrame for {endpoint}"
+                )
+                return False
+
+        # Xây dựng các phần tử của câu MERGE
+        col_list_sql = ", ".join([f"[{c}]" for c in columns])
+        on_clause = " AND ".join([f"target.{pk} = source.{pk}" for pk in primary_keys])
+        update_set_cols = [c for c in columns if c not in primary_keys]
+        update_set_sql = ",\n                        ".join(
+            [f"target.{c} = source.{c}" for c in update_set_cols]
+            + ["target.etl_updated_at = GETDATE()"]
+        )
+        insert_values_sql = ", ".join([f"source.{c}" for c in columns])
+
+        # Chia lô để tránh câu lệnh quá dài
+        batch_size = min(100, len(df)) if len(df) > 0 else 0
+
         try:
-            with self.db_engine.connect() as conn:
-                # Create temporary table
-                temp_table = (
-                    f"#temp_{endpoint}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                )
+            with self.db_engine.begin() as conn:  # Transaction ngắn
+                total_rows = 0
+                records = df.to_dict(orient="records")
+                for i in range(0, len(records), batch_size):
+                    batch = records[i : i + batch_size]
 
-                # Load data to temp table first (giảm chunksize để tránh lỗi ODBC parameter markers)
-                df.to_sql(
-                    name=temp_table.replace("#", ""),
-                    con=conn,
-                    if_exists="replace",
-                    index=False,
-                    method="multi",
-                    chunksize=15,
-                )
+                    # Xây VALUES và tham số ràng buộc
+                    values_rows = []
+                    params: Dict[str, Any] = {}
+                    for r_idx, row in enumerate(batch):
+                        placeholders = []
+                        for c in columns:
+                            pname = f"p_{r_idx}_{c}"
+                            placeholders.append(f":{pname}")
+                            params[pname] = row.get(c, None)
+                        values_rows.append(f"({', '.join(placeholders)})")
 
-                # Get primary key for each endpoint
-                primary_key = self._get_primary_key_for_endpoint(endpoint)
+                    values_sql = ",\n                        ".join(values_rows)
 
-                # Perform MERGE operation
-                merge_sql = self._build_merge_sql(
-                    endpoint, table_info, temp_table, primary_key, df.columns.tolist()
-                )
+                    matched_guard = (
+                        f"WHEN MATCHED THEN"
+                        if not update_condition
+                        else f"WHEN MATCHED AND {update_condition} THEN"
+                    )
 
-                result = conn.execute(text(merge_sql))
-                rows_affected = result.rowcount
+                    merge_sql = f"""
+                    MERGE [{table_info['schema']}].[{table_info['table']}] AS target
+                    USING (
+                        VALUES
+                            {values_sql}
+                    ) AS source ({col_list_sql})
+                    ON {on_clause}
 
-                # Drop temp table
-                conn.execute(text(f"DROP TABLE {temp_table}"))
+                    {matched_guard}
+                        UPDATE SET
+                            {update_set_sql}
 
-                logger.info(
-                    f"UPSERT completed for {endpoint}: {rows_affected} rows affected"
-                )
-                return True
+                    WHEN NOT MATCHED BY TARGET THEN
+                        INSERT ({col_list_sql})
+                        VALUES ({insert_values_sql});
+                    """
+
+                    conn.execute(text(merge_sql), params)
+                    total_rows += len(batch)
+
+            logger.info(
+                f"UPSERT (no-temp) completed for {endpoint}: {len(df)} rows processed"
+            )
+            return True
 
         except Exception as e:
             logger.error(f"Error in _upsert_records for {endpoint}: {str(e)}")
             return False
 
-    def _get_primary_key_for_endpoint(self, endpoint: str) -> str:
+    def _get_primary_key_for_endpoint(self, endpoint: str) -> Any:
         """
-        Get primary key column name for each MISA CRM endpoint
-
-        Args:
-            endpoint: MISA CRM endpoint name
-
-        Returns:
-            Primary key column name
+        Trả về tên cột khóa chính cho mỗi endpoint.
+        Hỗ trợ cả khóa đơn và khóa kép (trả về List[str]).
         """
-        primary_keys = {
-            "customers": "customer_id",
-            "sale_orders_flattened": "order_id",
-            "contacts": "contact_id",
-            "stocks": "stock_id",
-            "products": "product_id",
+        primary_keys_map: Dict[str, Any] = {
+            # Theo schema staging trong sql/00_master_setup.sql
+            "customers": "id",  # BIGINT PRIMARY KEY
+            "sale_orders_flattened": ["order_id", "item_id"],  # composite PK
+            "contacts": "id",  # BIGINT PRIMARY KEY
+            "stocks": "stock_code",  # PRIMARY KEY
+            "products": "id",  # BIGINT PRIMARY KEY
         }
 
-        return primary_keys.get(endpoint, "id")  # Default fallback
+        return primary_keys_map.get(endpoint, "id")
 
     def _get_update_condition_for_endpoint(self, endpoint: str) -> Optional[str]:
         """
@@ -336,13 +373,13 @@ class MISACRMLoader:
         Returns:
             Update condition string or None
         """
-        # Using ModifiedOn as the primary indicator of change
+        # Dùng cột thời gian cập nhật thực tế trong schema (modified_date)
         conditions = {
-            "customers": "target.ModifiedOn < source.ModifiedOn",
-            "sale_orders_flattened": "target.ModifiedOn < source.ModifiedOn",
-            "contacts": "target.ModifiedOn < source.ModifiedOn",
-            "stocks": "target.ModifiedOn < source.ModifiedOn",
-            "products": "target.ModifiedOn < source.ModifiedOn",
+            "customers": "ISNULL(target.modified_date, '1900-01-01') < ISNULL(source.modified_date, '1900-01-01')",
+            "contacts": "ISNULL(target.modified_date, '1900-01-01') < ISNULL(source.modified_date, '1900-01-01')",
+            "stocks": "ISNULL(target.modified_date, '1900-01-01') < ISNULL(source.modified_date, '1900-01-01')",
+            "products": "ISNULL(target.modified_date, '1900-01-01') < ISNULL(source.modified_date, '1900-01-01')",
+            # sale_orders_flattened chưa có modified_date trong schema → tạm thời không áp guard thời gian
         }
         return conditions.get(endpoint)
 

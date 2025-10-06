@@ -434,6 +434,162 @@ class ShopeeOrderLoader:
             logger.error(f"❌ Incremental load failed: {str(e)}")
             return False
 
+    def upsert_table(self, df: pd.DataFrame, table_name: str) -> bool:
+        """
+        UPSERT (MERGE + VALUES) cho từng bảng Shopee theo khóa tự nhiên.
+        - Không tạo bảng tạm.
+        - UPDATE có guard theo update_time nếu cột này tồn tại và/hoặc trường quan trọng.
+        """
+        if df.empty:
+            logger.info(f"📭 No data to upsert for Shopee.{table_name}")
+            return True
+
+        table_full_name = self.table_mappings.get(table_name)
+        if not table_full_name:
+            logger.error(f"❌ Table mapping not found for: {table_name}")
+            return False
+
+        try:
+            schema, target_table = table_full_name.split(".")
+
+            # Khóa tự nhiên theo bảng
+            pk_map = {
+                # Theo sql/00_master_setup.sql
+                "orders": ["order_sn"],
+                "recipient_address": ["order_sn"],
+                # PRIMARY KEY (order_sn, order_item_id, model_id)
+                "order_items": ["order_sn", "order_item_id", "model_id"],
+                # PRIMARY KEY (order_sn, order_item_id, model_id, location_id)
+                "order_item_locations": [
+                    "order_sn",
+                    "order_item_id",
+                    "model_id",
+                    "location_id",
+                ],
+                # PRIMARY KEY (order_sn, package_number)
+                "packages": ["order_sn", "package_number"],
+                # PRIMARY KEY (order_sn, package_number, order_item_id)
+                "package_items": ["order_sn", "package_number", "order_item_id"],
+                # PRIMARY KEY (order_sn)
+                "invoice": ["order_sn"],
+                # PRIMARY KEY (order_sn, transaction_id)
+                "payment_info": ["order_sn", "transaction_id"],
+                # PRIMARY KEY (order_sn, term)
+                "order_pending_terms": ["order_sn", "term"],
+                # PRIMARY KEY (order_sn, warning)
+                "order_warnings": ["order_sn", "warning"],
+                # PRIMARY KEY (order_sn, image_url)
+                "prescription_images": ["order_sn", "image_url"],
+                # PRIMARY KEY (order_sn, image_url)
+                "buyer_proof_of_collection": ["order_sn", "image_url"],
+            }
+
+            primary_keys = pk_map.get(table_name)
+            if not primary_keys:
+                logger.error(f"❌ Missing primary key mapping for Shopee.{table_name}")
+                return False
+
+            # Đảm bảo các cột khóa có trong DataFrame
+            for pk in primary_keys:
+                if pk not in df.columns:
+                    logger.error(
+                        f"❌ Primary key column '{pk}' not found in DataFrame for Shopee.{table_name}"
+                    )
+                    return False
+
+            # Chuẩn hóa datetime-naive nếu có cột datetime dạng tz-aware
+            df_export = self._convert_datetime_to_naive(df)
+
+            columns = df_export.columns.tolist()
+            col_list_sql = ", ".join([f"[{c}]" for c in columns])
+            on_clause = " AND ".join(
+                [f"target.{pk} = source.{pk}" for pk in primary_keys]
+            )
+            update_set_cols = [c for c in columns if c not in primary_keys]
+
+            update_guard = None
+            if "update_time" in df_export.columns:
+                update_guard = (
+                    "ISNULL(target.update_time, 0) < ISNULL(source.update_time, 0)"
+                )
+
+            extra_changes = []
+            if table_name == "orders":
+                if "order_status" in df_export.columns:
+                    extra_changes.append(
+                        "ISNULL(target.order_status,'') <> ISNULL(source.order_status,'')"
+                    )
+                if "shipping_carrier" in df_export.columns:
+                    extra_changes.append(
+                        "ISNULL(target.shipping_carrier,'') <> ISNULL(source.shipping_carrier,'')"
+                    )
+
+            if extra_changes:
+                if update_guard:
+                    update_guard = (
+                        f"({update_guard} OR " + " OR ".join(extra_changes) + ")"
+                    )
+                else:
+                    update_guard = "(" + " OR ".join(extra_changes) + ")"
+
+            update_set_sql = ",\n                            ".join(
+                [f"target.{c} = source.{c}" for c in update_set_cols]
+                + ["target.etl_updated_at = GETUTCDATE()"]
+            )
+            insert_values_sql = ", ".join([f"source.{c}" for c in columns])
+
+            # Chia lô nhỏ để tránh câu lệnh quá dài
+            batch_size = min(200, len(df_export)) if len(df_export) > 0 else 0
+
+            with self.db_engine.begin() as conn:
+                total_rows = 0
+                records = df_export.to_dict(orient="records")
+                for i in range(0, len(records), batch_size):
+                    batch = records[i : i + batch_size]
+
+                    values_rows = []
+                    params = {}
+                    for r_idx, row in enumerate(batch):
+                        placeholders = []
+                        for c in columns:
+                            pname = f"p_{r_idx}_{c}"
+                            placeholders.append(f":{pname}")
+                            params[pname] = row.get(c, None)
+                        values_rows.append(f"({', '.join(placeholders)})")
+
+                    values_sql = ",\n                            ".join(values_rows)
+
+                    matched_guard = "WHEN MATCHED THEN"
+                    if update_guard:
+                        matched_guard = f"WHEN MATCHED AND {update_guard} THEN"
+
+                    merge_sql = f"""
+                    MERGE [{schema}].[{target_table}] AS target
+                    USING (
+                        VALUES
+                            {values_sql}
+                    ) AS source ({col_list_sql})
+                    ON {on_clause}
+
+                    {matched_guard}
+                        UPDATE SET
+                            {update_set_sql}
+
+                    WHEN NOT MATCHED BY TARGET THEN
+                        INSERT ({col_list_sql})
+                        VALUES ({insert_values_sql});
+                    """
+
+                    conn.execute(text(merge_sql), params)
+                    total_rows += len(batch)
+
+            logger.info(f"✅ Upserted {len(df_export)} rows into {table_full_name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Failed to upsert Shopee.{table_name}: {str(e)}")
+            return False
+
     def load_flat_orders_dataframe(
         self, df: pd.DataFrame, load_type: str = "full"
     ) -> bool:

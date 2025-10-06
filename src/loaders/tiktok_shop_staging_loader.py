@@ -8,6 +8,7 @@ import logging
 import sys
 import os
 from typing import Optional, Dict, Any
+from sqlalchemy import text
 
 # Add project root to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -188,7 +189,7 @@ class TikTokShopOrderLoader:
 
     def _upsert_orders(self, df: pd.DataFrame) -> bool:
         """
-        Perform UPSERT operation using SQL MERGE statement
+        Thực hiện UPSERT bằng MERGE + VALUES (không tạo bảng tạm)
 
         Args:
             df: Prepared DataFrame
@@ -197,114 +198,90 @@ class TikTokShopOrderLoader:
             True if successful, False otherwise
         """
         try:
-            with self.db.get_connection() as conn:
-                # Create temp table for batch processing
-                temp_table = f"#{self.staging_table}_temp"
+            # Danh sách cột và PK
+            columns = df.columns.tolist()
+            if "order_id" not in columns:
+                logger.error("Thiếu cột khóa 'order_id' trong DataFrame TikTok")
+                return False
 
-                # Create temp table with same structure
-                create_temp_sql = f"""
-                CREATE TABLE {temp_table} (
-                    order_id NVARCHAR(50) NOT NULL,
-                    shop_id NVARCHAR(50),
-                    order_status INT,
-                    create_time DATETIME2,
-                    update_time DATETIME2,
-                    buyer_email NVARCHAR(255),
-                    shipping_provider NVARCHAR(100),
-                    tracking_number NVARCHAR(100),
-                    delivery_type INT,
-                    delivery_option_id NVARCHAR(50),
-                    is_cod_order BIT,
-                    payment_method_name NVARCHAR(100),
-                    payment_method_id INT,
-                    shipping_fee_platform_discount DECIMAL(18,2),
-                    platform_discount DECIMAL(18,2),
-                    seller_discount DECIMAL(18,2),
-                    tax_amount DECIMAL(18,2),
-                    order_amount DECIMAL(18,2),
-                    currency NVARCHAR(10),
-                    recipient_address NVARCHAR(MAX),
-                    etl_batch_id NVARCHAR(50),
-                    etl_created_at DATETIME2,
-                    etl_updated_at DATETIME2
+            col_list_sql = ", ".join([f"[{c}]" for c in columns])
+            on_clause = "target.order_id = source.order_id"
+            update_set_cols = [c for c in columns if c != "order_id"]
+
+            # Guard cập nhật: ưu tiên update_time; thêm trạng thái/ vận chuyển nếu có
+            guards = []
+            if "update_time" in columns:
+                guards.append(
+                    "ISNULL(target.update_time, 0) < ISNULL(source.update_time, 0)"
                 )
-                """
-
-                conn.execute(create_temp_sql)
-                logger.info(f"Created temp table {temp_table}")
-
-                # Insert data to temp table
-                df.to_sql(
-                    name=temp_table[1:],  # Remove # prefix for pandas
-                    con=self.db.engine,
-                    schema=self.staging_schema,
-                    if_exists="append",
-                    index=False,
-                    method="multi",
+            if "order_status" in columns:
+                guards.append(
+                    "ISNULL(target.order_status,'') <> ISNULL(source.order_status,'')"
+                )
+            if "tracking_number" in columns:
+                guards.append(
+                    "ISNULL(target.tracking_number,'') <> ISNULL(source.tracking_number,'')"
+                )
+            if "shipping_provider" in columns:
+                guards.append(
+                    "ISNULL(target.shipping_provider,'') <> ISNULL(source.shipping_provider,'')"
                 )
 
-                # Perform MERGE operation
-                merge_sql = f"""
-                MERGE [{self.staging_schema}].[{self.staging_table}] AS target
-                USING {temp_table} AS source
-                ON target.order_id = source.order_id
-                
-                WHEN MATCHED AND (
-                    target.update_time < source.update_time OR
-                    target.order_status != source.order_status OR
-                    target.tracking_number != source.tracking_number
-                ) THEN
-                    UPDATE SET
-                        shop_id = source.shop_id,
-                        order_status = source.order_status,
-                        create_time = source.create_time,
-                        update_time = source.update_time,
-                        buyer_email = source.buyer_email,
-                        shipping_provider = source.shipping_provider,
-                        tracking_number = source.tracking_number,
-                        delivery_type = source.delivery_type,
-                        delivery_option_id = source.delivery_option_id,
-                        is_cod_order = source.is_cod_order,
-                        payment_method_name = source.payment_method_name,
-                        payment_method_id = source.payment_method_id,
-                        shipping_fee_platform_discount = source.shipping_fee_platform_discount,
-                        platform_discount = source.platform_discount,
-                        seller_discount = source.seller_discount,
-                        tax_amount = source.tax_amount,
-                        order_amount = source.order_amount,
-                        currency = source.currency,
-                        recipient_address = source.recipient_address,
-                        etl_updated_at = GETDATE()
-                        
-                WHEN NOT MATCHED THEN
-                    INSERT (
-                        order_id, shop_id, order_status, create_time, update_time,
-                        buyer_email, shipping_provider, tracking_number, delivery_type,
-                        delivery_option_id, is_cod_order, payment_method_name, 
-                        payment_method_id, shipping_fee_platform_discount, platform_discount,
-                        seller_discount, tax_amount, order_amount, currency,
-                        recipient_address, etl_batch_id, etl_created_at, etl_updated_at
-                    )
-                    VALUES (
-                        source.order_id, source.shop_id, source.order_status, 
-                        source.create_time, source.update_time, source.buyer_email,
-                        source.shipping_provider, source.tracking_number, source.delivery_type,
-                        source.delivery_option_id, source.is_cod_order, source.payment_method_name,
-                        source.payment_method_id, source.shipping_fee_platform_discount,
-                        source.platform_discount, source.seller_discount, source.tax_amount,
-                        source.order_amount, source.currency, source.recipient_address,
-                        source.etl_batch_id, source.etl_created_at, source.etl_updated_at
-                    );
-                """
+            matched_guard = "WHEN MATCHED THEN"
+            if guards:
+                matched_guard = f"WHEN MATCHED AND (" + " OR ".join(guards) + ") THEN"
 
-                result = conn.execute(merge_sql)
-                rows_affected = result.rowcount
+            update_set_sql = ",\n                        ".join(
+                [f"target.{c} = source.{c}" for c in update_set_cols]
+                + ["target.etl_updated_at = GETUTCDATE()"]
+            )
+            insert_values_sql = ", ".join([f"source.{c}" for c in columns])
 
-                # Drop temp table
-                conn.execute(f"DROP TABLE {temp_table}")
+            # Chia lô để tránh câu lệnh quá dài
+            batch_size = min(200, len(df)) if len(df) > 0 else 0
 
-                logger.info(f"UPSERT completed: {rows_affected} rows affected")
-                return True
+            with self.db.engine.begin() as conn:
+                total_rows = 0
+                records = df.to_dict(orient="records")
+                for i in range(0, len(records), batch_size):
+                    batch = records[i : i + batch_size]
+
+                    values_rows = []
+                    params: Dict[str, Any] = {}
+                    for r_idx, row in enumerate(batch):
+                        placeholders = []
+                        for c in columns:
+                            pname = f"p_{r_idx}_{c}"
+                            placeholders.append(f":{pname}")
+                            params[pname] = row.get(c, None)
+                        values_rows.append(f"({', '.join(placeholders)})")
+
+                    values_sql = ",\n                            ".join(values_rows)
+
+                    merge_sql = f"""
+                    MERGE [{self.staging_schema}].[{self.staging_table}] AS target
+                    USING (
+                        VALUES
+                            {values_sql}
+                    ) AS source ({col_list_sql})
+                    ON {on_clause}
+
+                    {matched_guard}
+                        UPDATE SET
+                            {update_set_sql}
+
+                    WHEN NOT MATCHED BY TARGET THEN
+                        INSERT ({col_list_sql})
+                        VALUES ({insert_values_sql});
+                    """
+
+                    conn.execute(text(merge_sql), params)
+                    total_rows += len(batch)
+
+            logger.info(
+                f"UPSERT (no-temp) completed for TikTok: {len(df)} rows processed"
+            )
+            return True
 
         except Exception as e:
             logger.error(f"Error in _upsert_orders: {str(e)}")

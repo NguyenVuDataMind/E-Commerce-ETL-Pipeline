@@ -439,9 +439,8 @@ def load_shopee_orders_incremental(**context):
 
             df_table = pd.DataFrame(records)
 
-            ok = loader.load_dataframe_to_table(
-                df_table, table_name, if_exists="append"
-            )
+            # Thay append bằng UPSERT per-table
+            ok = loader.upsert_table(df_table, table_name)
             if not ok:
                 raise Exception(
                     f"Failed to load Shopee incremental table '{table_name}' ({len(df_table)} rows)"
