@@ -569,9 +569,7 @@ class ShopeeOrderLoader:
 
             update_guard = None
             if "update_time" in df_export.columns:
-                update_guard = (
-                    "ISNULL(target.update_time, '1900-01-01') < ISNULL(source.update_time, '1900-01-01')"
-                )
+                update_guard = "ISNULL(target.update_time, '1900-01-01') < ISNULL(source.update_time, '1900-01-01')"
 
             extra_changes = []
             if table_name == "orders":
