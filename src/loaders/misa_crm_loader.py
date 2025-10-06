@@ -271,13 +271,14 @@ class MISACRMLoader:
                     f"#temp_{endpoint}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 )
 
-                # Load data to temp table first
+                # Load data to temp table first (giảm chunksize để tránh lỗi ODBC parameter markers)
                 df.to_sql(
                     name=temp_table.replace("#", ""),
                     con=conn,
                     if_exists="replace",
                     index=False,
                     method="multi",
+                    chunksize=15,
                 )
 
                 # Get primary key for each endpoint

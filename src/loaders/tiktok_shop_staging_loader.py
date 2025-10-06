@@ -64,7 +64,7 @@ class TikTokShopOrderLoader:
         df: pd.DataFrame,
         load_mode: str = "append",
         validate_before_load: bool = True,
-        batch_size: int = 500,
+        batch_size: int = 15,
     ) -> bool:
         """
         Load order data into staging table với memory optimization
@@ -175,7 +175,7 @@ class TikTokShopOrderLoader:
             logger.info(f"Loading {len(df)} rows incrementally with UPSERT logic...")
 
             # Prepare the data
-            df_prepared = self._prepare_dataframe(df)
+            df_prepared = self._prepare_dataframe_for_load(df)
             if df_prepared is None:
                 return False
 
