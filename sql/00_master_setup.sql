@@ -661,7 +661,11 @@ CREATE TABLE staging.shopee_orders (
     return_request_due_date DATETIME2,
     is_buyer_shop_collection BIT,
     source_request_id NVARCHAR(100),
-    ingested_at DATETIME2 DEFAULT GETUTCDATE()
+    ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api'
 );
 GO
 
@@ -681,6 +685,10 @@ CREATE TABLE staging.shopee_recipient_address (
     longitude DECIMAL(10,6),
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
 );
 GO
@@ -712,6 +720,10 @@ CREATE TABLE staging.shopee_order_items (
     image_url NVARCHAR(MAX),
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, order_item_id),
     FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
 );
@@ -724,6 +736,10 @@ CREATE TABLE staging.shopee_order_item_locations (
     location_id NVARCHAR(100) NOT NULL,
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, order_item_id, location_id),
     FOREIGN KEY (order_sn, order_item_id) REFERENCES staging.shopee_order_items(order_sn, order_item_id) ON DELETE CASCADE
 );
@@ -744,6 +760,10 @@ CREATE TABLE staging.shopee_packages (
     sorting_group NVARCHAR(100),
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, package_number),
     FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
 );
@@ -762,6 +782,10 @@ CREATE TABLE staging.shopee_package_items (
     parcel_chargeable_weight INT,
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, package_number, order_item_id),
     FOREIGN KEY (order_sn, package_number) REFERENCES staging.shopee_packages(order_sn, package_number) ON DELETE NO ACTION,
     FOREIGN KEY (order_sn, order_item_id) REFERENCES staging.shopee_order_items(order_sn, order_item_id) ON DELETE NO ACTION
@@ -780,6 +804,10 @@ CREATE TABLE staging.shopee_invoice (
     tax_code NVARCHAR(50),
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
 );
 GO
@@ -793,6 +821,10 @@ CREATE TABLE staging.shopee_payment_info (
     card_brand NVARCHAR(50),
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, transaction_id),
     FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
 );
@@ -804,6 +836,10 @@ CREATE TABLE staging.shopee_order_pending_terms (
     term NVARCHAR(400) NOT NULL,
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, term),
     FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
 );
@@ -815,6 +851,10 @@ CREATE TABLE staging.shopee_order_warnings (
     warning NVARCHAR(400) NOT NULL,
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, warning),
     FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
 );
@@ -826,6 +866,10 @@ CREATE TABLE staging.shopee_prescription_images (
     image_url NVARCHAR(400) NOT NULL,
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, image_url),
     FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
 );
@@ -837,6 +881,10 @@ CREATE TABLE staging.shopee_buyer_proof_of_collection (
     image_url NVARCHAR(400) NOT NULL,
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_batch_id NVARCHAR(50),
+    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, image_url),
     FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
 );
@@ -855,6 +903,15 @@ CREATE INDEX IX_shopee_packages_logistics_status ON staging.shopee_packages(logi
 CREATE INDEX IX_shopee_packages_shipping_carrier ON staging.shopee_packages(shipping_carrier);
 
 CREATE INDEX IX_shopee_payment_info_transaction_id ON staging.shopee_payment_info(transaction_id);
+
+-- Create ETL indexes for Shopee tables (similar to TikTok Shop)
+CREATE INDEX IX_shopee_orders_etl_updated ON staging.shopee_orders(etl_updated_at);
+CREATE INDEX IX_shopee_orders_etl_batch ON staging.shopee_orders(etl_batch_id);
+CREATE INDEX IX_shopee_recipient_address_etl_updated ON staging.shopee_recipient_address(etl_updated_at);
+CREATE INDEX IX_shopee_order_items_etl_updated ON staging.shopee_order_items(etl_updated_at);
+CREATE INDEX IX_shopee_packages_etl_updated ON staging.shopee_packages(etl_updated_at);
+CREATE INDEX IX_shopee_invoice_etl_updated ON staging.shopee_invoice(etl_updated_at);
+CREATE INDEX IX_shopee_payment_info_etl_updated ON staging.shopee_payment_info(etl_updated_at);
 GO
 
 PRINT 'Shopee orders tables created successfully!';

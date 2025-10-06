@@ -118,7 +118,7 @@ def transform_tiktok_shop_incremental(**context):
                 transformed_df_clean[col] = transformed_df_clean[col].astype(str)
 
         # Replace NaN values with None to make it JSON serializable
-        transformed_df_clean = transformed_df_clean.fillna(None)
+        transformed_df_clean = transformed_df_clean.fillna(value=None)
         transformed_data = transformed_df_clean.to_dict("records")
         context["ti"].xcom_push(
             key="tiktok_shop_incremental_transformed", value=transformed_data
@@ -248,7 +248,6 @@ def transform_misa_crm_incremental(**context):
         for key, df in transformed_data.items():
             if df is not None and not df.empty:
                 # Serialize DataFrame sang JSON-safe để tránh lỗi Timestamp/NaN
-                import json
 
                 payload_json = df.to_json(
                     orient="records", date_format="iso", date_unit="s"
@@ -366,7 +365,6 @@ def transform_shopee_orders_incremental(**context):
         tables_to_dfs = transformer.transform_orders_to_dataframes(orders_data)
 
         # Serialize từng bảng sang JSON-safe và đẩy XCom theo key riêng
-        import json
 
         total_rows = 0
         for table_name, df in tables_to_dfs.items():
