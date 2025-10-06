@@ -11,7 +11,7 @@ import logging
 import sys
 import os
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import threading
 import pyodbc
 
@@ -65,9 +65,16 @@ class TikTokAuthenticator:
                         logger.info("Loaded TikTok Shop tokens from database.")
                         self.access_token = row.access_token
                         self.refresh_token = row.refresh_token
-                        self.access_token_expires_at = (
-                            row.expires_at.timestamp() if row.expires_at else None
-                        )
+                        # Chuẩn hóa expires_at từ DB là UTC (pyodbc trả datetime naive)
+                        if row.expires_at:
+                            expires_dt = (
+                                row.expires_at.replace(tzinfo=timezone.utc)
+                                if getattr(row.expires_at, "tzinfo", None) is None
+                                else row.expires_at
+                            )
+                            self.access_token_expires_at = expires_dt.timestamp()
+                        else:
+                            self.access_token_expires_at = None
                         # Always use shop_cipher from .env (fixed value)
                         self.shop_cipher = settings.tiktok_shop_cipher
                         self.refresh_token_expires_at = (
@@ -249,9 +256,9 @@ class TikTokAuthenticator:
             with pyodbc.connect(settings.pyodbc_connection_string) as conn:
                 cursor = conn.cursor()
 
-                # Convert expiry timestamp to datetime object for SQL Server
+                # Convert expiry timestamp to UTC datetime for SQL Server
                 expiry_dt = (
-                    datetime.fromtimestamp(self.access_token_expires_at)
+                    datetime.utcfromtimestamp(self.access_token_expires_at)
                     if self.access_token_expires_at
                     else None
                 )

@@ -98,6 +98,64 @@ class ShopeeOrderLoader:
 
         return df_copy
 
+    def _normalize_datetime_fields(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Chuẩn hóa các cột thời gian từ UNIX epoch (s/ms) hoặc ISO string về datetime tz-naive.
+
+        Chỉ áp dụng cho các cột thời gian của Shopee orders theo schema staging.shopee_orders.
+        """
+        if df.empty:
+            return df
+
+        df_norm = df.copy()
+
+        datetime_cols = [
+            "create_time",
+            "update_time",
+            "ship_by_date",
+            "note_update_time",
+            "pay_time",
+            "pickup_done_time",
+            "edt_from",
+            "edt_to",
+            "return_request_due_date",
+            "prescription_approval_time",
+            "prescription_rejection_time",
+        ]
+
+        for col in datetime_cols:
+            if col not in df_norm.columns:
+                continue
+
+            s = df_norm[col]
+
+            # Bỏ qua hoàn toàn nếu series đã là datetime64[ns]
+            if str(s.dtype).startswith("datetime64"):
+                continue
+
+            # Trường hợp numeric (epoch giây/ms)
+            if pd.api.types.is_numeric_dtype(s):
+                s_float = s.astype("float64")
+                # Heuristic: >1e12 => ms, >1e9 => s
+                if s_float.dropna().gt(1e12).any():
+                    dt = pd.to_datetime(s_float, unit="ms", errors="coerce", utc=True)
+                elif s_float.dropna().gt(1e9).any():
+                    dt = pd.to_datetime(s_float, unit="s", errors="coerce", utc=True)
+                else:
+                    # Nếu nhỏ hơn, cố gắng parse như giây
+                    dt = pd.to_datetime(s_float, unit="s", errors="coerce", utc=True)
+                df_norm[col] = dt.dt.tz_convert(None)
+                continue
+
+            # Trường hợp string ISO hoặc chuỗi khác
+            if pd.api.types.is_string_dtype(s):
+                # Thử parse ISO; pandas hỗ trợ hậu tố Z nếu utc=True
+                dt = pd.to_datetime(s, errors="coerce", utc=True)
+                # Nếu toàn bộ NaT (parse thất bại), giữ nguyên
+                if dt.notna().any():
+                    df_norm[col] = dt.dt.tz_convert(None)
+
+        return df_norm
+
     def truncate_table(self, table_name: str) -> bool:
         """
         Xóa tất cả dữ liệu trong table (Full Load) theo chuẩn SQL Server
@@ -313,8 +371,9 @@ class ShopeeOrderLoader:
             return True
 
         try:
-            # Chuẩn hóa datetime để tránh lỗi khi ghi DB
-            df_export = self._convert_datetime_to_naive(df)
+            # Chuẩn hóa datetime: chuyển epoch/ISO -> datetime, rồi bỏ timezone
+            df_export = self._normalize_datetime_fields(df)
+            df_export = self._convert_datetime_to_naive(df_export)
 
             target_full = self.table_mappings["orders"]
             schema, target_table = target_full.split(".")
@@ -497,8 +556,9 @@ class ShopeeOrderLoader:
                     )
                     return False
 
-            # Chuẩn hóa datetime-naive nếu có cột datetime dạng tz-aware
-            df_export = self._convert_datetime_to_naive(df)
+            # Chuẩn hóa datetime: chuyển epoch/ISO -> datetime, rồi bỏ timezone
+            df_export = self._normalize_datetime_fields(df)
+            df_export = self._convert_datetime_to_naive(df_export)
 
             columns = df_export.columns.tolist()
             col_list_sql = ", ".join([f"[{c}]" for c in columns])
@@ -510,7 +570,7 @@ class ShopeeOrderLoader:
             update_guard = None
             if "update_time" in df_export.columns:
                 update_guard = (
-                    "ISNULL(target.update_time, 0) < ISNULL(source.update_time, 0)"
+                    "ISNULL(target.update_time, '1900-01-01') < ISNULL(source.update_time, '1900-01-01')"
                 )
 
             extra_changes = []
@@ -608,8 +668,9 @@ class ShopeeOrderLoader:
             return True
 
         try:
-            # Convert datetime columns to timezone-naive
-            df_export = self._convert_datetime_to_naive(df)
+            # Chuẩn hóa datetime: chuyển epoch/ISO -> datetime, rồi bỏ timezone
+            df_export = self._normalize_datetime_fields(df)
+            df_export = self._convert_datetime_to_naive(df_export)
 
             table_full_name = self.table_mappings["orders"]
 

@@ -742,7 +742,7 @@ class ShopeeOrderExtractor:
         Extract đơn hàng incremental (dữ liệu mới trong X phút gần nhất)
 
         Args:
-            minutes_back: Số phút lookback (default 15 phút với buffer 5 phút)
+            minutes_back: Số phút lookback (mặc định 15 phút; token được refresh sớm 20 phút trước hết hạn)
 
         Returns:
             List chứa orders mới
