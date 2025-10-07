@@ -161,8 +161,8 @@ class TikTokShopOrderTransformer:
             "order_status": self._safe_string(order.get("status"), 100),
             "buyer_email": self._safe_string(order.get("buyer_email"), 255),
             "buyer_message": order.get("buyer_message"),
-            "create_time": self._safe_int(order.get("create_time")),
-            "update_time": self._safe_int(order.get("update_time")),
+            "create_time": self._safe_timestamp_int(order.get("create_time")),
+            "update_time": self._safe_timestamp_int(order.get("update_time")),
             "fulfillment_type": self._safe_string(order.get("fulfillment_type"), 100),
             "payment_method_name": self._safe_string(
                 order.get("payment_method_name"), 200
@@ -172,8 +172,12 @@ class TikTokShopOrderTransformer:
             "request_id": self._safe_string(order.get("request_id"), 200),
             "shop_id": self._safe_string(order.get("shop_id"), 100),
             "region": self._safe_string(order.get("region"), 50),
-            "cancel_order_sla_time": self._safe_int(order.get("cancel_order_sla_time")),
-            "collection_due_time": self._safe_int(order.get("collection_due_time")),
+            "cancel_order_sla_time": self._safe_timestamp_int(
+                order.get("cancel_order_sla_time")
+            ),
+            "collection_due_time": self._safe_timestamp_int(
+                order.get("collection_due_time")
+            ),
             "commerce_platform": self._safe_string(order.get("commerce_platform"), 100),
             "delivery_option_id": self._safe_string(
                 order.get("delivery_option_id"), 100
@@ -193,18 +197,20 @@ class TikTokShopOrderTransformer:
             "is_replacement_order": self._safe_bool(order.get("is_replacement_order")),
             "is_sample_order": self._safe_bool(order.get("is_sample_order")),
             "order_type": self._safe_string(order.get("order_type"), 100),
-            "paid_time": self._safe_int(order.get("paid_time")),
-            "recommended_shipping_time": self._safe_int(
+            "paid_time": self._safe_timestamp_int(order.get("paid_time")),
+            "recommended_shipping_time": self._safe_timestamp_int(
                 order.get("recommended_shipping_time")
             ),
-            "rts_sla_time": self._safe_int(order.get("rts_sla_time")),
-            "shipping_due_time": self._safe_int(order.get("shipping_due_time")),
+            "rts_sla_time": self._safe_timestamp_int(order.get("rts_sla_time")),
+            "shipping_due_time": self._safe_timestamp_int(
+                order.get("shipping_due_time")
+            ),
             "shipping_provider": self._safe_string(order.get("shipping_provider"), 200),
             "shipping_provider_id": self._safe_string(
                 order.get("shipping_provider_id"), 100
             ),
             "shipping_type": self._safe_string(order.get("shipping_type"), 100),
-            "tts_sla_time": self._safe_int(order.get("tts_sla_time")),
+            "tts_sla_time": self._safe_timestamp_int(order.get("tts_sla_time")),
             "tracking_number": self._safe_string(order.get("tracking_number"), 200),
             "is_buyer_request_cancel": self._safe_bool(
                 order.get("is_buyer_request_cancel")
@@ -217,10 +223,16 @@ class TikTokShopOrderTransformer:
             ),
             "seller_note": order.get("seller_note"),
             "delivery_option": self._safe_string(order.get("delivery_option"), 200),
-            "delivery_due_time": self._safe_int(order.get("delivery_due_time")),
-            "rts_time": self._safe_int(order.get("rts_time")),
-            "delivery_sla_time": self._safe_int(order.get("delivery_sla_time")),
-            "collection_sla_time": self._safe_int(order.get("collection_sla_time")),
+            "delivery_due_time": self._safe_timestamp_int(
+                order.get("delivery_due_time")
+            ),
+            "rts_time": self._safe_timestamp_int(order.get("rts_time")),
+            "delivery_sla_time": self._safe_timestamp_int(
+                order.get("delivery_sla_time")
+            ),
+            "collection_sla_time": self._safe_timestamp_int(
+                order.get("collection_sla_time")
+            ),
             "order_line_id": self._safe_string(order.get("order_line_id"), 100),
             "cpf": self._safe_string(order.get("cpf"), 100),
             # FIXED: Payment Info - Map từ 'payment' object theo JSON structure thực tế
@@ -347,9 +359,9 @@ class TikTokShopOrderTransformer:
             "item_is_buyer_request_cancel": self._safe_bool(
                 item.get("is_buyer_request_cancel")
             ),
-            "item_rts_time": self._safe_int(item.get("rts_time")),
-            "item_shipped_time": self._safe_int(item.get("shipped_time")),
-            "item_delivered_time": self._safe_int(item.get("delivered_time")),
+            "item_rts_time": self._safe_timestamp_int(item.get("rts_time")),
+            "item_shipped_time": self._safe_timestamp_int(item.get("shipped_time")),
+            "item_delivered_time": self._safe_timestamp_int(item.get("delivered_time")),
             # FIXED: Sử dụng generic JSON field thay vì sales_attributes
             "item_sku_attributes": (
                 json.dumps(item) if item else None
@@ -420,6 +432,19 @@ class TikTokShopOrderTransformer:
         try:
             return int(float(str(value)))
         except (ValueError, TypeError):
+            return None
+
+    def _safe_timestamp_int(self, value: Any) -> Optional[int]:
+        """Safely convert timestamp value to int, handling pandas Timestamp objects"""
+        if value is None or value == "":
+            return None
+        try:
+            # Handle pandas Timestamp objects
+            if hasattr(value, "timestamp"):
+                return int(value.timestamp())
+            # Handle regular int/float values
+            return int(float(str(value)))
+        except (ValueError, TypeError, AttributeError):
             return None
 
     def _safe_bool(self, value: Any) -> Optional[bool]:

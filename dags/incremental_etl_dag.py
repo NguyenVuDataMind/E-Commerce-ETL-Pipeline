@@ -110,13 +110,52 @@ def transform_tiktok_shop_incremental(**context):
         transformed_df_clean = transformed_df.copy()
 
         # Convert all datetime/timestamp columns to string để JSON serializable
+        # FIXED: Không convert timestamp fields thành string để tránh data type mismatch
         for col in transformed_df_clean.columns:
             if transformed_df_clean[col].dtype == "datetime64[ns]":
-                transformed_df_clean[col] = transformed_df_clean[col].dt.strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
+                # Chỉ convert datetime columns thực sự, không phải timestamp fields
+                if col not in [
+                    "create_time",
+                    "update_time",
+                    "paid_time",
+                    "rts_sla_time",
+                    "tts_sla_time",
+                    "shipping_due_time",
+                    "delivery_due_time",
+                    "rts_time",
+                    "delivery_sla_time",
+                    "collection_sla_time",
+                    "cancel_order_sla_time",
+                    "collection_due_time",
+                    "recommended_shipping_time",
+                    "item_rts_time",
+                    "item_shipped_time",
+                    "item_delivered_time",
+                ]:
+                    transformed_df_clean[col] = transformed_df_clean[col].dt.strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
             elif "timestamp" in str(transformed_df_clean[col].dtype).lower():
-                transformed_df_clean[col] = transformed_df_clean[col].astype(str)
+                # Chỉ convert pandas Timestamp objects, không phải int timestamp fields
+                if col not in [
+                    "create_time",
+                    "update_time",
+                    "paid_time",
+                    "rts_sla_time",
+                    "tts_sla_time",
+                    "shipping_due_time",
+                    "delivery_due_time",
+                    "rts_time",
+                    "delivery_sla_time",
+                    "collection_sla_time",
+                    "cancel_order_sla_time",
+                    "collection_due_time",
+                    "recommended_shipping_time",
+                    "item_rts_time",
+                    "item_shipped_time",
+                    "item_delivered_time",
+                ]:
+                    transformed_df_clean[col] = transformed_df_clean[col].astype(str)
 
         # Replace NaN values with None to make it JSON serializable
         transformed_df_clean = transformed_df_clean.where(
