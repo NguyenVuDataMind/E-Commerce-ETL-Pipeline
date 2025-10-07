@@ -266,7 +266,7 @@ class TikTokShopOrderLoader:
             guards = []
             if "update_time" in columns:
                 guards.append(
-                    "ISNULL(target.update_time, 0) < ISNULL(source.update_time, 0)"
+                    "ISNULL(target.update_time, '1900-01-01') < ISNULL(source.update_time, '1900-01-01')"
                 )
             if "order_status" in columns:
                 guards.append(
