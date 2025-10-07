@@ -490,11 +490,8 @@ class MISACRMExtractor:
                 ts = record.get("modified_date") or record.get("ModifiedDate")
                 if not ts:
                     continue
-                try:
-                    dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-                except Exception:
-                    continue
-                if dt >= cutoff_time:
+                dt = self._parse_datetime_with_timezone(ts)
+                if dt and dt >= cutoff_time:
                     filtered_data.append(record)
         # Đối với sale_orders: ưu tiên theo thời gian tạo/cập nhật đơn thay vì lấy hết
         elif endpoint_name == "sale_orders":
@@ -510,11 +507,9 @@ class MISACRMExtractor:
                 for f in time_fields_priority:
                     ts = record.get(f) or record.get(f.capitalize())
                     if ts:
-                        try:
-                            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                        dt = self._parse_datetime_with_timezone(ts)
+                        if dt:
                             break
-                        except Exception:
-                            continue
                 if dt and dt >= cutoff_time:
                     filtered_data.append(record)
         else:
@@ -523,6 +518,22 @@ class MISACRMExtractor:
 
         logger.info(f"Lọc incremental: {len(filtered_data)}/{len(all_data)} records")
         return filtered_data
+
+    def _parse_datetime_with_timezone(self, ts: str) -> Optional[datetime]:
+        """
+        Parse datetime string và chuyển về UTC để so sánh
+        """
+        try:
+            dt = datetime.fromisoformat(str(ts))
+            if dt.tzinfo is None:
+                # Nếu không có timezone, coi như UTC
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                # Nếu có timezone, chuyển về UTC để so sánh
+                dt = dt.astimezone(timezone.utc)
+            return dt
+        except Exception:
+            return None
 
     def health_check(self) -> Dict[str, Any]:
         """
