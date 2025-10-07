@@ -202,8 +202,10 @@ class TikTokShopOrderLoader:
         try:
             prepared = df.copy()
 
-            # Các cột thời gian của TikTok thường là epoch giây
-            epoch_cols = [
+            # Các cột thời gian của TikTok: có mix giây và mili-giây → cần nhận diện theo độ lớn
+            # Lưu ý: sau khi chuyển sang UTC (timezone-aware), ta bỏ timezone để khớp kiểu datetime2 của SQL Server
+            epoch_like_cols = [
+                # order-level
                 "create_time",
                 "update_time",
                 "paid_time",
@@ -211,19 +213,52 @@ class TikTokShopOrderLoader:
                 "shipping_due_time",
                 "delivery_due_time",
                 "collection_due_time",
+                "cancel_order_sla_time",
+                "recommended_shipping_time",
+                "rts_sla_time",
+                "tts_sla_time",
+                "delivery_sla_time",
+                "collection_sla_time",
+                # item-level
+                "item_rts_time",
+                "item_shipped_time",
+                "item_delivered_time",
             ]
 
-            for col in epoch_cols:
+            for col in epoch_like_cols:
                 if col in prepared.columns:
-                    # Chỉ chuyển nếu là số; tránh chuyển lại các cột đã là datetime
+                    series = prepared[col]
+                    # Chỉ chuyển nếu kiểu số; tránh chuyển lại datetime/chuỗi ISO
                     if pd.api.types.is_integer_dtype(
-                        prepared[col]
-                    ) or pd.api.types.is_float_dtype(prepared[col]):
-                        prepared[col] = pd.to_datetime(
-                            prepared[col], unit="s", utc=True
-                        )
+                        series
+                    ) or pd.api.types.is_float_dtype(series):
+                        # Heuristic: giá trị > 1e12 thường là milliseconds
+                        try:
+                            # Dùng median để tránh nhiễu do một vài giá trị null/ngoại lệ
+                            sample_val = pd.to_numeric(series.dropna()).median()
+                        except Exception:
+                            sample_val = None
 
-            # Bắt buộc có etl timestamps ở dạng datetime
+                        if sample_val is not None and sample_val > 1_000_000_000_000:
+                            prepared[col] = pd.to_datetime(series, unit="ms", utc=True)
+                        else:
+                            prepared[col] = pd.to_datetime(series, unit="s", utc=True)
+
+                        # Bỏ timezone (UTC-naive) để tương thích datetime2
+                        prepared[col] = (
+                            prepared[col].dt.tz_convert("UTC").dt.tz_localize(None)
+                        )
+                    elif pd.api.types.is_datetime64_any_dtype(series):
+                        # Nếu đã là datetime có timezone → bỏ timezone về UTC-naive
+                        try:
+                            prepared[col] = series.dt.tz_convert("UTC").dt.tz_localize(
+                                None
+                            )
+                        except Exception:
+                            # Nếu đã naive thì giữ nguyên
+                            pass
+
+            # Bắt buộc có etl timestamps ở dạng datetime UTC-naive để khớp datetime2
             for etl_col in ["etl_created_at", "etl_updated_at"]:
                 if (
                     etl_col in prepared.columns
@@ -232,6 +267,17 @@ class TikTokShopOrderLoader:
                     prepared[etl_col] = pd.to_datetime(
                         prepared[etl_col], utc=True, errors="coerce"
                     )
+                if (
+                    etl_col in prepared.columns
+                    and pd.api.types.is_datetime64_any_dtype(prepared[etl_col])
+                ):
+                    try:
+                        prepared[etl_col] = (
+                            prepared[etl_col].dt.tz_convert("UTC").dt.tz_localize(None)
+                        )
+                    except Exception:
+                        # Nếu đã là naive thì giữ nguyên
+                        pass
 
             # Chuẩn hóa chuỗi: thay 'nan' thành None để SQL friendly
             prepared = prepared.where(pd.notnull(prepared), None)
@@ -285,10 +331,18 @@ class TikTokShopOrderLoader:
             if guards:
                 matched_guard = f"WHEN MATCHED AND (" + " OR ".join(guards) + ") THEN"
 
-            update_set_sql = ",\n                        ".join(
-                [f"target.{c} = source.{c}" for c in update_set_cols]
-                + ["target.etl_updated_at = GETUTCDATE()"]
-            )
+            # Loại trừ các cột ETL metadata khỏi auto-update để tránh gán trùng
+            etl_meta = {"etl_created_at", "etl_updated_at"}
+            update_cols_effective = [c for c in update_set_cols if c not in etl_meta]
+            set_clauses = [f"target.{c} = source.{c}" for c in update_cols_effective]
+            # Cho phép cập nhật batch/source nếu có mặt
+            if "etl_batch_id" in columns:
+                set_clauses.append("target.etl_batch_id = source.etl_batch_id")
+            if "etl_source" in columns:
+                set_clauses.append("target.etl_source = source.etl_source")
+            # etl_updated_at do hệ thống set theo UTC
+            set_clauses.append("target.etl_updated_at = GETUTCDATE()")
+            update_set_sql = ",\n                        ".join(set_clauses)
             insert_values_sql = ", ".join([f"source.{c}" for c in columns])
 
             # Chia lô để tránh câu lệnh quá dài

@@ -236,8 +236,14 @@ class MISACRMLoader:
             df_prepared["etl_created_at"] = current_time
             df_prepared["etl_updated_at"] = current_time
 
-            # Handle NaN values
-            # Giữ None để ghi NULL lên DB thay vì chuỗi rỗng
+            # Lọc cột theo schema thật của bảng đích trước khi sinh MERGE
+            # → đảm bảo chỉ giữ các cột tồn tại, đúng yêu cầu người dùng
+            if endpoint in self.table_mappings:
+                table_full_name = self.table_mappings[endpoint]
+                table_info = self._get_table_info(table_full_name)
+                df_prepared = self._normalize_dataframe_for_endpoint(
+                    df_prepared, endpoint, table_info
+                )
 
             return df_prepared
 
