@@ -3,7 +3,7 @@ Incremental ETL DAG - Chạy mỗi 15 phút để lấy dữ liệu mới
 Thiết kế để chạy sau khi Full Load đã hoàn thành
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
@@ -191,8 +191,8 @@ def extract_misa_crm_incremental(**context):
         endpoints = ["customers", "sale_orders", "contacts", "products", "stocks"]
         incremental_data = {}
 
-        # Lấy timestamp theo cấu hình lookback (phút)
-        cutoff_time = datetime.now() - timedelta(
+        # Lấy timestamp theo cấu hình lookback (phút) - FIXED: Sử dụng timezone-aware datetime
+        cutoff_time = datetime.now(timezone.utc) - timedelta(
             minutes=int(getattr(settings, "etl_incremental_lookback_minutes", 15))
         )
 
@@ -239,7 +239,7 @@ def transform_misa_crm_incremental(**context):
         # Transform data
         transformer = MISACRMTransformer()
         # Tạo batch_id dựa trên execution timestamp để truy vết phiên chạy
-        batch_id = f"inc_{context.get('ts_nodash') or datetime.utcnow().strftime('%Y%m%dT%H%M%S')}"
+        batch_id = f"inc_{context.get('ts_nodash') or datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
         transformed_data = transformer.transform_all_endpoints(
             incremental_data, batch_id
         )
