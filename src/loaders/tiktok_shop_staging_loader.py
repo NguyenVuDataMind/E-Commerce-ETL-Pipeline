@@ -228,28 +228,56 @@ class TikTokShopOrderLoader:
             for col in epoch_like_cols:
                 if col in prepared.columns:
                     series = prepared[col]
-                    # Chỉ chuyển nếu kiểu số; tránh chuyển lại datetime/chuỗi ISO
+                    # Trường hợp 1: numeric (int/float)
                     if pd.api.types.is_integer_dtype(
                         series
                     ) or pd.api.types.is_float_dtype(series):
-                        # Heuristic: giá trị > 1e12 thường là milliseconds
                         try:
-                            # Dùng median để tránh nhiễu do một vài giá trị null/ngoại lệ
                             sample_val = pd.to_numeric(series.dropna()).median()
                         except Exception:
                             sample_val = None
-
                         if sample_val is not None and sample_val > 1_000_000_000_000:
                             prepared[col] = pd.to_datetime(series, unit="ms", utc=True)
                         else:
                             prepared[col] = pd.to_datetime(series, unit="s", utc=True)
-
                         # Bỏ timezone (UTC-naive) để tương thích datetime2
-                        prepared[col] = (
-                            prepared[col].dt.tz_convert("UTC").dt.tz_localize(None)
-                        )
-                    elif pd.api.types.is_datetime64_any_dtype(series):
-                        # Nếu đã là datetime có timezone → bỏ timezone về UTC-naive
+                        try:
+                            prepared[col] = (
+                                prepared[col].dt.tz_convert("UTC").dt.tz_localize(None)
+                            )
+                        except Exception:
+                            prepared[col] = prepared[col].dt.tz_localize(None)
+                        continue
+                    # Trường hợp 2: object chứa chuỗi số → ép số rồi xử lý như trên
+                    if pd.api.types.is_object_dtype(series):
+                        s_num = pd.to_numeric(series, errors="coerce")
+                        if s_num.notna().any():
+                            try:
+                                sample_val = s_num.dropna().median()
+                            except Exception:
+                                sample_val = None
+                            if (
+                                sample_val is not None
+                                and sample_val > 1_000_000_000_000
+                            ):
+                                prepared[col] = pd.to_datetime(
+                                    s_num, unit="ms", utc=True
+                                )
+                            else:
+                                prepared[col] = pd.to_datetime(
+                                    s_num, unit="s", utc=True
+                                )
+                            try:
+                                prepared[col] = (
+                                    prepared[col]
+                                    .dt.tz_convert("UTC")
+                                    .dt.tz_localize(None)
+                                )
+                            except Exception:
+                                prepared[col] = prepared[col].dt.tz_localize(None)
+                            continue
+                    # Trường hợp 3: đã là datetime → bỏ timezone nếu có
+                    if pd.api.types.is_datetime64_any_dtype(series):
                         try:
                             prepared[col] = series.dt.tz_convert("UTC").dt.tz_localize(
                                 None

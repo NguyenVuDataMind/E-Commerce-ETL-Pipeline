@@ -120,6 +120,39 @@ class MISACRMLoader:
         table_full_name = self.table_mappings[endpoint]
         table_info = self._get_table_info(table_full_name)
 
+        # Lấy danh sách cột thật của bảng đích để intersect lần cuối trước khi MERGE
+        try:
+            with self.db_engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT COLUMN_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table
+                        ORDER BY ORDINAL_POSITION
+                        """
+                    ),
+                    {"schema": table_info["schema"], "table": table_info["table"]},
+                ).fetchall()
+                db_columns = [r[0] for r in rows]
+                if not db_columns:
+                    raise RuntimeError("Empty INFORMATION_SCHEMA result")
+        except Exception:
+            # Fallback: SELECT TOP 0 * để lấy tên cột theo đúng thứ tự DB
+            try:
+                with self.db_engine.connect() as conn:
+                    res = conn.execute(
+                        text(
+                            f"SELECT TOP 0 * FROM [{table_info['schema']}].[{table_info['table']}]"
+                        )
+                    )
+                    db_columns = list(res.keys())
+            except Exception as e2:
+                logger.error(
+                    f"Không thể lấy danh sách cột DB cho {table_full_name}: {e2}"
+                )
+                return False
+
         try:
             # Chuẩn hóa DataFrame theo schema và endpoint trước khi ghi
             df = self._normalize_dataframe_for_endpoint(df, endpoint, table_info)
@@ -272,8 +305,25 @@ class MISACRMLoader:
         # Cột guard để xác định mới hơn
         update_condition = self._get_update_condition_for_endpoint(endpoint)
 
-        # Danh sách cột theo DataFrame (giữ nguyên thứ tự)
-        columns: List[str] = df.columns.tolist()
+        # Danh sách cột theo DataFrame (giữ nguyên thứ tự), intersect với DB columns
+        df_columns: List[str] = df.columns.tolist()
+        columns: List[str] = [c for c in df_columns if c in db_columns]
+        if not columns:
+            logger.error(
+                f"Không có cột nào của DataFrame khớp với bảng {table_full_name}. DF cols: {df_columns} — DB cols: {db_columns}"
+            )
+            return False
+        # Log chênh lệch cột để dễ debug
+        extra_df_cols = [c for c in df_columns if c not in db_columns]
+        missing_df_cols = [c for c in db_columns if c not in df_columns]
+        if extra_df_cols:
+            logger.warning(
+                f"{endpoint}: loại bỏ cột không có trong schema đích: {extra_df_cols}"
+            )
+        if missing_df_cols:
+            logger.warning(
+                f"{endpoint}: DataFrame thiếu các cột có trong bảng đích: {missing_df_cols}"
+            )
 
         # Bảo đảm các cột khóa có trong DataFrame
         for pk in primary_keys:
@@ -286,11 +336,20 @@ class MISACRMLoader:
         # Xây dựng các phần tử của câu MERGE
         col_list_sql = ", ".join([f"[{c}]" for c in columns])
         on_clause = " AND ".join([f"target.{pk} = source.{pk}" for pk in primary_keys])
-        update_set_cols = [c for c in columns if c not in primary_keys]
-        update_set_sql = ",\n                        ".join(
-            [f"target.{c} = source.{c}" for c in update_set_cols]
-            + ["target.etl_updated_at = GETDATE()"]
-        )
+        # Loại bỏ các cột ETL khỏi auto-update; chỉ set thủ công sau
+        etl_cols = {"etl_created_at", "etl_updated_at", "etl_batch_id", "etl_source"}
+        update_set_cols = [
+            c for c in columns if c not in primary_keys and c not in etl_cols
+        ]
+        set_clauses = [f"target.{c} = source.{c}" for c in update_set_cols]
+        # Giữ batch/source nếu có trong nguồn
+        if "etl_batch_id" in columns:
+            set_clauses.append("target.etl_batch_id = source.etl_batch_id")
+        if "etl_source" in columns:
+            set_clauses.append("target.etl_source = source.etl_source")
+        # Cập nhật mốc ETL theo UTC
+        set_clauses.append("target.etl_updated_at = GETUTCDATE()")
+        update_set_sql = ",\n                        ".join(set_clauses)
         insert_values_sql = ", ".join([f"source.{c}" for c in columns])
 
         # Chia lô để tránh câu lệnh quá dài
