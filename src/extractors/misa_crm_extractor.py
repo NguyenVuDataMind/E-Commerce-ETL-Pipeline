@@ -133,23 +133,23 @@ class MISACRMExtractor:
             exp_timestamp = decoded.get("exp")
 
             if exp_timestamp:
-                return datetime.fromtimestamp(exp_timestamp)
+                return datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
             else:
                 logger.warning(
                     "Token không có thời gian hết hạn, sử dụng mặc định 1 giờ"
                 )
-                return datetime.now() + timedelta(hours=1)
+                return datetime.now(timezone.utc) + timedelta(hours=1)
 
         except Exception as e:
             logger.warning(f"Không thể decode token: {e}, sử dụng mặc định 1 giờ")
-            return datetime.now() + timedelta(hours=1)
+            return datetime.now(timezone.utc) + timedelta(hours=1)
 
     def _is_token_expired(self) -> bool:
         """Kiểm tra token có hết hạn không"""
         if not self.access_token or not self.token_expires_at:
             return True
 
-        buffer_time = datetime.now() + timedelta(
+        buffer_time = datetime.now(timezone.utc) + timedelta(
             seconds=settings.misa_crm_token_refresh_buffer
         )
         return buffer_time >= self.token_expires_at
