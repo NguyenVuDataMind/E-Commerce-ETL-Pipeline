@@ -9,7 +9,7 @@ import requests
 import jwt
 import time
 import pyodbc
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 import logging
 import sys
@@ -469,7 +469,7 @@ class MISACRMExtractor:
         else:
             if lookback_hours is None:
                 lookback_hours = settings.misa_crm_incremental_lookback_hours
-            cutoff_time = datetime.now() - timedelta(hours=lookback_hours)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
             logger.info(
                 f"Lấy dữ liệu incremental từ {endpoint_name} (lookback: {lookback_hours} giờ, cutoff: {cutoff_time.isoformat()})"
             )

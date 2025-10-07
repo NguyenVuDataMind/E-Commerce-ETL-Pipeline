@@ -169,6 +169,12 @@ class TikTokShopOrderLoader:
             True if successful, False otherwise
         """
         try:
+            # Khởi tạo database connection nếu chưa có
+            if not self.db.engine:
+                if not self.db.initialize():
+                    logger.error("Failed to initialize database connection")
+                    return False
+
             if df.empty:
                 logger.warning("DataFrame is empty, nothing to load")
                 return True
