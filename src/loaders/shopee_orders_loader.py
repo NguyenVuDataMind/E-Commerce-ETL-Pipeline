@@ -266,8 +266,17 @@ class ShopeeOrderLoader:
             return False
 
         try:
+            # Xóa duplicate cho tất cả bảng Shopee (full load)
+            df_deduped = self._deduplicate_shopee_dataframe(df, table_name)
+
+            if df_deduped.empty:
+                logger.warning(
+                    f"⚠️ DataFrame for {table_name} is empty after deduplication, skipping"
+                )
+                return True
+
             # Convert datetime columns to timezone-naive
-            df_export = self._convert_datetime_to_naive(df)
+            df_export = self._convert_datetime_to_naive(df_deduped)
 
             # Load to database (giới hạn chunksize nhỏ để tránh quá tải tham số ODBC/SQL Server)
             df_export.to_sql(
@@ -280,12 +289,66 @@ class ShopeeOrderLoader:
                 chunksize=15,
             )
 
-            logger.info(f"✅ Loaded {len(df)} rows to {table_full_name}")
+            logger.info(f"✅ Loaded {len(df_deduped)} rows to {table_full_name}")
             return True
 
         except Exception as e:
             logger.error(f"❌ Failed to load DataFrame to {table_full_name}: {str(e)}")
             return False
+
+    def _deduplicate_shopee_dataframe(
+        self, df: pd.DataFrame, table_name: str
+    ) -> pd.DataFrame:
+        """
+        Xóa duplicate theo khóa chính của từng bảng Shopee (chỉ cho full load)
+        """
+        # Khóa chính theo bảng (theo sql/00_master_setup.sql)
+        pk_map = {
+            "orders": ["order_sn"],
+            "recipient_address": ["order_sn"],
+            "order_items": ["order_sn", "order_item_id", "model_id"],
+            "order_item_locations": [
+                "order_sn",
+                "order_item_id",
+                "model_id",
+                "location_id",
+            ],
+            "packages": ["order_sn", "package_number"],
+            "package_items": ["order_sn", "package_number", "order_item_id"],
+            "invoice": ["order_sn"],
+            "payment_info": ["order_sn", "transaction_id"],
+            "order_pending_terms": ["order_sn", "term"],
+            "order_warnings": ["order_sn", "warning"],
+            "prescription_images": ["order_sn", "image_url"],
+            "buyer_proof_of_collection": ["order_sn", "image_url"],
+        }
+
+        primary_keys = pk_map.get(table_name, [])
+        if not primary_keys:
+            logger.warning(
+                f"⚠️ No primary key mapping for {table_name}, skipping deduplication"
+            )
+            return df
+
+        # Kiểm tra các cột khóa chính có tồn tại không
+        missing_cols = [col for col in primary_keys if col not in df.columns]
+        if missing_cols:
+            logger.warning(
+                f"⚠️ Missing primary key columns {missing_cols} for {table_name}, skipping deduplication"
+            )
+            return df
+
+        # Xóa duplicate, giữ lại bản ghi cuối cùng
+        original_count = len(df)
+        df_deduped = df.drop_duplicates(subset=primary_keys, keep="last")
+        removed_count = original_count - len(df_deduped)
+
+        if removed_count > 0:
+            logger.info(
+                f"🔄 Deduplicated {table_name}: removed {removed_count} duplicates ({original_count} → {len(df_deduped)})"
+            )
+
+        return df_deduped
 
     def load_orders_full_load(self, dataframes: Dict[str, pd.DataFrame]) -> bool:
         """
