@@ -297,6 +297,40 @@ class MISACRMLoader:
         table_full_name = self.table_mappings[endpoint]
         table_info = self._get_table_info(table_full_name)
 
+        # Lấy danh sách cột thật của bảng đích để intersect lần cuối trước khi MERGE
+        db_columns = []
+        try:
+            with self.db_engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT COLUMN_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table
+                        ORDER BY ORDINAL_POSITION
+                        """
+                    ),
+                    {"schema": table_info["schema"], "table": table_info["table"]},
+                ).fetchall()
+                db_columns = [r[0] for r in rows]
+                if not db_columns:
+                    raise RuntimeError("Empty INFORMATION_SCHEMA result")
+        except Exception:
+            # Fallback: SELECT TOP 0 * để lấy tên cột theo đúng thứ tự DB
+            try:
+                with self.db_engine.connect() as conn:
+                    res = conn.execute(
+                        text(
+                            f"SELECT TOP 0 * FROM [{table_info['schema']}].[{table_info['table']}]"
+                        )
+                    )
+                    db_columns = list(res.keys())
+            except Exception as e2:
+                logger.error(
+                    f"Không thể lấy danh sách cột DB cho {table_full_name}: {e2}"
+                )
+                return False
+
         # Lấy khóa chính (hỗ trợ khóa đơn hoặc khóa kép)
         primary_keys = self._get_primary_key_for_endpoint(endpoint)
         if isinstance(primary_keys, str):
@@ -839,7 +873,9 @@ class MISACRMLoader:
                     )
                 else:
                     s_clean = s
-                df_norm[col] = pd.to_numeric(s_clean, errors="coerce")
+                # Convert to numeric và thay NaN bằng None để SQL Server chấp nhận
+                numeric_series = pd.to_numeric(s_clean, errors="coerce")
+                df_norm[col] = numeric_series.where(pd.notna(numeric_series), None)
                 continue
 
             # BIT

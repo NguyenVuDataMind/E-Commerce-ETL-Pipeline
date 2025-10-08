@@ -314,7 +314,12 @@ class ShopeeOrderLoader:
                 "location_id",
             ],
             "packages": ["order_sn", "package_number"],
-            "package_items": ["order_sn", "package_number", "order_item_id"],
+            "package_items": [
+                "order_sn",
+                "package_number",
+                "order_item_id",
+                "model_id",
+            ],
             "invoice": ["order_sn"],
             "payment_info": ["order_sn", "transaction_id"],
             "order_pending_terms": ["order_sn", "term"],
@@ -590,8 +595,13 @@ class ShopeeOrderLoader:
                 ],
                 # PRIMARY KEY (order_sn, package_number)
                 "packages": ["order_sn", "package_number"],
-                # PRIMARY KEY (order_sn, package_number, order_item_id)
-                "package_items": ["order_sn", "package_number", "order_item_id"],
+                # PRIMARY KEY (order_sn, package_number, order_item_id, model_id)
+                "package_items": [
+                    "order_sn",
+                    "package_number",
+                    "order_item_id",
+                    "model_id",
+                ],
                 # PRIMARY KEY (order_sn)
                 "invoice": ["order_sn"],
                 # PRIMARY KEY (order_sn, transaction_id)
@@ -619,8 +629,16 @@ class ShopeeOrderLoader:
                     )
                     return False
 
+            # Xóa duplicate theo khóa chính trước khi upsert
+            df_deduped = self._deduplicate_shopee_dataframe(df, table_name)
+            if df_deduped.empty:
+                logger.info(
+                    f"📭 No data to upsert after deduplication for Shopee.{table_name}"
+                )
+                return True
+
             # Chuẩn hóa datetime: chuyển epoch/ISO -> datetime, rồi bỏ timezone
-            df_export = self._normalize_datetime_fields(df)
+            df_export = self._normalize_datetime_fields(df_deduped)
             df_export = self._convert_datetime_to_naive(df_export)
 
             columns = df_export.columns.tolist()
