@@ -316,7 +316,12 @@ class TikTokShopOrderLoader:
                 matched_guard = f"WHEN MATCHED AND (" + " OR ".join(guards) + ") THEN"
 
             # Loại trừ các cột ETL metadata khỏi auto-update để tránh gán trùng
-            etl_meta = {"etl_created_at", "etl_updated_at"}
+            etl_meta = {
+                "etl_created_at",
+                "etl_updated_at",
+                "etl_batch_id",
+                "etl_source",
+            }
             update_cols_effective = [c for c in update_set_cols if c not in etl_meta]
             set_clauses = [f"target.{c} = source.{c}" for c in update_cols_effective]
             # Cho phép cập nhật batch/source nếu có mặt

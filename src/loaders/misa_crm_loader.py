@@ -278,6 +278,9 @@ class MISACRMLoader:
                     df_prepared, endpoint, table_info
                 )
 
+            # Thay toàn bộ NaN/NaT bằng None để tương thích SQL bind (float/decimal không nhận NaN)
+            df_prepared = df_prepared.where(pd.notnull(df_prepared), None)
+
             return df_prepared
 
         except Exception as e:
@@ -779,6 +782,9 @@ class MISACRMLoader:
 
         # Chuẩn hóa theo kiểu cột trong schema
         df_norm = self._normalize_by_schema_types(df_norm, column_types)
+
+        # Bước cuối: thay toàn bộ NaN/NaT bằng None để an toàn khi bind vào SQL (tránh lỗi 8023)
+        df_norm = df_norm.where(pd.notnull(df_norm), None)
 
         return df_norm
 
