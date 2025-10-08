@@ -279,6 +279,7 @@ class TikTokShopOrderLoader:
                 "is_replacement_order",
                 "is_sample_order",
                 "is_buyer_request_cancel",
+                "item_is_buyer_request_cancel",
                 "item_is_gift",
                 "is_gift",
             ]
@@ -399,7 +400,14 @@ class TikTokShopOrderLoader:
                         for c in columns:
                             pname = f"p_{r_idx}_{c}"
                             placeholders.append(f":{pname}")
-                            params[pname] = row.get(c, None)
+                            val = row.get(c, None)
+                            # Chốt: mọi NaN/NaT -> None để tránh lỗi 8023 khi bind vào BIGINT/DECIMAL/BIT
+                            try:
+                                if pd.isna(val):
+                                    val = None
+                            except Exception:
+                                pass
+                            params[pname] = val
                         values_rows.append(f"({', '.join(placeholders)})")
 
                     values_sql = ",\n                            ".join(values_rows)

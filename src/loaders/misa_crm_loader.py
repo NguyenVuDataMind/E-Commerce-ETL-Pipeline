@@ -407,7 +407,11 @@ class MISACRMLoader:
                         for c in columns:
                             pname = f"p_{r_idx}_{c}"
                             placeholders.append(f":{pname}")
-                            params[pname] = row.get(c, None)
+                            val = row.get(c, None)
+                            # Tránh bind NaN: thay bằng None để SQL nhận NULL
+                            if isinstance(val, float) and pd.isna(val):
+                                val = None
+                            params[pname] = val
                         values_rows.append(f"({', '.join(placeholders)})")
 
                     values_sql = ",\n                        ".join(values_rows)
@@ -879,9 +883,11 @@ class MISACRMLoader:
                     )
                 else:
                     s_clean = s
-                # Convert to numeric và thay NaN bằng None để SQL Server chấp nhận
+                # Convert to numeric; ép về object để giữ None (tránh NaN quay lại khi bind)
                 numeric_series = pd.to_numeric(s_clean, errors="coerce")
-                df_norm[col] = numeric_series.where(pd.notna(numeric_series), None)
+                df_norm[col] = numeric_series.astype("object").where(
+                    pd.notna(numeric_series), None
+                )
                 continue
 
             # BIT
