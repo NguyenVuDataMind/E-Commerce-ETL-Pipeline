@@ -195,16 +195,19 @@ class TikTokShopOrderLoader:
 
     def _prepare_dataframe_for_upsert(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
         """
-        Chuẩn hóa DataFrame trước khi UPSERT:
-          - Chuyển các cột thời gian từ epoch (giây) sang pandas datetime (UTC)
-          - Chuẩn hóa kiểu dữ liệu cho phù hợp schema staging
+        Chuẩn hóa DataFrame trước khi UPSERT theo cách full load đang dùng:
+          - Thời gian: giữ BIGINT epoch giây; nếu phát hiện mili-giây (>=1e12) thì chia 1000.
+          - Tiền/số: ép numeric, thay NaN bằng None để SQL nhận NULL.
+          - Số đếm: INT nullable (Int64) rồi cast object để giữ None khi bind.
+          - Boolean: map True/False -> 1/0, null -> None (BIT).
+          - Chuỗi/JSON: giữ nguyên chuỗi, thay 'nan'/NaN -> None.
+          - etl_*: datetime UTC-naive để khớp DATETIME2.
         """
         try:
             prepared = df.copy()
 
-            # Các cột thời gian của TikTok: GIỮ NGUYÊN dạng BIGINT (epoch) để khớp schema database
-            # Schema TikTok Shop định nghĩa các cột này là BIGINT, không phải DATETIME2
-            epoch_like_cols = [
+            # 1) Chuẩn hóa các cột thời gian (epoch)
+            epoch_cols = [
                 # order-level
                 "create_time",
                 "update_time",
@@ -214,7 +217,7 @@ class TikTokShopOrderLoader:
                 "delivery_due_time",
                 "collection_due_time",
                 "cancel_order_sla_time",
-                "recommended_shipping_time",
+                "recommended_shipping_time",  # thường là mili-giây
                 "rts_sla_time",
                 "tts_sla_time",
                 "delivery_sla_time",
@@ -225,24 +228,73 @@ class TikTokShopOrderLoader:
                 "item_delivered_time",
             ]
 
-            for col in epoch_like_cols:
+            for col in epoch_cols:
                 if col in prepared.columns:
-                    series = prepared[col]
-                    # Chỉ convert sang numeric (int/float) để khớp BIGINT trong DB
-                    if pd.api.types.is_object_dtype(series):
-                        # Convert string numbers to numeric
-                        prepared[col] = pd.to_numeric(series, errors="coerce")
-                    elif pd.api.types.is_datetime64_any_dtype(series):
-                        # Nếu đã là datetime, convert về epoch seconds
-                        try:
-                            prepared[col] = (
-                                series.astype("int64") // 10**9
-                            )  # Convert to seconds
-                        except Exception:
-                            # Fallback: keep as is if conversion fails
-                            pass
+                    s = pd.to_numeric(prepared[col], errors="coerce")
+                    # Nếu giá trị lớn bất thường (>= 1e12) coi là mili-giây -> quy về giây
+                    s = s.where(s.isna() | (s < 10**12), (s // 1000))
+                    # Dùng Int64 (nullable) rồi cast object để giữ None khi bind
+                    prepared[col] = (
+                        s.astype("Int64").astype("object").where(pd.notnull(s), None)
+                    )
 
-            # Bắt buộc có etl timestamps ở dạng datetime UTC-naive để khớp datetime2
+            # 2) Chuẩn hóa nhóm tiền/tổng (DECIMAL(18,2) phía DB)
+            money_cols = [
+                "payment_original_shipping_fee",
+                "payment_original_total_product_price",
+                "payment_platform_discount",
+                "payment_seller_discount",
+                "payment_shipping_fee",
+                "payment_shipping_fee_cofunded_discount",
+                "payment_shipping_fee_platform_discount",
+                "payment_shipping_fee_seller_discount",
+                "payment_sub_total",
+                "payment_tax",
+                "payment_total_amount",
+                "item_original_price",
+                "item_sale_price",
+                "item_platform_discount",
+                "item_seller_discount",
+                "display_price",
+                "total_product_price",
+            ]
+            for col in money_cols:
+                if col in prepared.columns:
+                    s = pd.to_numeric(prepared[col], errors="coerce")
+                    prepared[col] = s.astype("object").where(pd.notnull(s), None)
+
+            # 3) Số đếm
+            for col in ["item_quantity", "quantity", "fulfillment_priority_level"]:
+                if col in prepared.columns:
+                    s = pd.to_numeric(prepared[col], errors="coerce")
+                    prepared[col] = (
+                        s.astype("Int64").astype("object").where(pd.notnull(s), None)
+                    )
+
+            # 4) Boolean -> BIT
+            bool_cols = [
+                "has_updated_recipient_address",
+                "is_cod",
+                "is_on_hold_order",
+                "is_replacement_order",
+                "is_sample_order",
+                "is_buyer_request_cancel",
+                "item_is_gift",
+                "is_gift",
+            ]
+            for col in bool_cols:
+                if col in prepared.columns:
+                    prepared[col] = (
+                        prepared[col]
+                        .map({True: 1, False: 0})
+                        .where(pd.notnull(prepared[col]), None)
+                    )
+
+            # 5) Chuỗi/JSON: thay 'nan' -> None; giữ nguyên nội dung
+            prepared = prepared.replace("nan", None)
+            prepared = prepared.where(pd.notnull(prepared), None)
+
+            # 6) etl timestamps -> datetime2 UTC-naive
             for etl_col in ["etl_created_at", "etl_updated_at"]:
                 if (
                     etl_col in prepared.columns
@@ -260,11 +312,7 @@ class TikTokShopOrderLoader:
                             prepared[etl_col].dt.tz_convert("UTC").dt.tz_localize(None)
                         )
                     except Exception:
-                        # Nếu đã là naive thì giữ nguyên
                         pass
-
-            # Chuẩn hóa chuỗi: thay 'nan' thành None để SQL friendly
-            prepared = prepared.where(pd.notnull(prepared), None)
 
             return prepared
         except Exception as e:
@@ -295,8 +343,9 @@ class TikTokShopOrderLoader:
             # Guard cập nhật: ưu tiên update_time; thêm trạng thái/ vận chuyển nếu có
             guards = []
             if "update_time" in columns:
+                # So sánh BIGINT epoch theo dạng số, không dùng chuỗi ngày
                 guards.append(
-                    "ISNULL(target.update_time, '1900-01-01') < ISNULL(source.update_time, '1900-01-01')"
+                    "ISNULL(target.update_time, 0) < ISNULL(source.update_time, 0)"
                 )
             if "order_status" in columns:
                 guards.append(
