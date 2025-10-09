@@ -437,8 +437,7 @@ def load_shopee_orders_full_load(**context):
         success = loader.load_orders_full_load(tables_to_dfs)
 
         if success:
-            stats = loader.validate_data_integrity()
-            logger.info(f"📊 Load statistics: {stats}")
+            logger.info("✅ Shopee 12 tables loaded successfully")
             return "Successfully loaded Shopee 12 tables (full load)"
         else:
             logger.error("❌ Failed to load Shopee 12 tables")
