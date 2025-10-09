@@ -495,7 +495,7 @@ with DAG(
         load_tiktok_task = PythonOperator(
             task_id="load",
             python_callable=load_tiktok_shop_full_load,
-            execution_timeout=timedelta(minutes=30),
+            execution_timeout=timedelta(hours=2),  # Tăng từ 30 phút lên 2 giờ
         )
         extract_tiktok_task >> transform_tiktok_task >> load_tiktok_task
 
