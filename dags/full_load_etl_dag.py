@@ -256,6 +256,9 @@ def transform_tiktok_shop_full_load(**context):
             key="tiktok_shop_transformed_data", value=transformed_data_json
         )
 
+        # FIX: Lưu số records trước khi xóa biến
+        record_count = len(transformed_df_clean)
+
         # Memory cleanup
         del all_orders
         del transformed_df
@@ -264,7 +267,7 @@ def transform_tiktok_shop_full_load(**context):
 
         gc.collect()
 
-        return f"Transformed {len(transformed_df_clean)} records to JSON"
+        return f"Transformed {record_count} records to JSON"
 
     except Exception as e:
         logger.error(f"❌ TikTok Shop transformation failed: {str(e)}")
