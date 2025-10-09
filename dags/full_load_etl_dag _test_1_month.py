@@ -227,39 +227,40 @@ def transform_tiktok_shop_full_load(**context):
 
         logger.info(f"✅ Transformation complete: {len(transformed_df)} records")
 
-        # Convert to dict for XCom (handle NaN values và Timestamp serialization)
-        # FIXED: Convert Timestamp columns to string để tránh JSON serialization error
-        transformed_df_clean = transformed_df.copy()
+        # FIX: Ghi Parquet file thay vì XCom lớn để tránh memory allocation error
+        import os
 
-        # Convert all datetime/timestamp columns to string để JSON serializable
-        for col in transformed_df_clean.columns:
-            if transformed_df_clean[col].dtype == "datetime64[ns]":
-                transformed_df_clean[col] = transformed_df_clean[col].dt.strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-            elif "timestamp" in str(transformed_df_clean[col].dtype).lower():
-                transformed_df_clean[col] = transformed_df_clean[col].astype(str)
+        output_dir = "/opt/airflow/data/tiktok"
+        os.makedirs(output_dir, exist_ok=True)
 
-        # Fill NaN values với None để JSON serializable
-        transformed_df_clean = transformed_df_clean.where(
-            pd.notnull(transformed_df_clean), None
+        # Dùng run_id để đảm bảo mỗi DAG run chỉ có 1 file duy nhất
+        run_id = context["dag_run"].run_id
+        safe_run_id = run_id.replace(":", "_")
+        file_path = os.path.join(output_dir, f"tiktok_orders_{safe_run_id}.parquet")
+        tmp_path = file_path + ".tmp"
+
+        # Ghi Parquet với compression snappy để giảm kích thước
+        transformed_df.to_parquet(
+            tmp_path, engine="pyarrow", compression="snappy", index=False
         )
-        transformed_data = transformed_df_clean.to_dict("records")
 
-        # Push to XCom
-        context["ti"].xcom_push(
-            key="tiktok_shop_transformed_data", value=transformed_data
-        )
+        # Atomic write: ghi vào .tmp rồi rename
+        os.replace(tmp_path, file_path)
+
+        # Push chỉ đường dẫn file thay vì toàn bộ DataFrame
+        context["ti"].xcom_push(key="tiktok_shop_transformed_path", value=file_path)
+
+        # Lưu số records trước khi cleanup
+        record_count = len(transformed_df)
 
         # Memory cleanup
         del all_orders
         del transformed_df
-        del transformed_df_clean
         import gc
 
         gc.collect()
 
-        return f"Transformed {len(transformed_data)} records"
+        return f"Transformed {record_count} records to Parquet file: {file_path}"
 
     except Exception as e:
         logger.error(f"❌ TikTok Shop transformation failed: {str(e)}")
@@ -272,17 +273,18 @@ def load_tiktok_shop_full_load(**context):
     logger.info("🔄 Starting TikTok Shop Full Load Loading...")
 
     try:
-        # Pull transformed data from XCom
-        transformed_data = context["ti"].xcom_pull(key="tiktok_shop_transformed_data")
+        # Pull file path from XCom thay vì JSON data
+        file_path = context["ti"].xcom_pull(key="tiktok_shop_transformed_path")
 
-        if not transformed_data:
-            logger.warning("📭 No transformed data to load")
+        if not file_path:
+            logger.warning("📭 No transformed file path to load")
             return "No data to load"
 
-        # Convert back to DataFrame
+        # Đọc Parquet file thay vì JSON
         import pandas as pd
+        import os
 
-        df = pd.DataFrame(transformed_data)
+        df = pd.read_parquet(file_path, engine="pyarrow")
 
         logger.info(f"📊 Loading {len(df)} records to staging...")
 
@@ -296,6 +298,13 @@ def load_tiktok_shop_full_load(**context):
             # Get load statistics
             stats = loader.get_load_statistics()
             logger.info(f"📊 Load statistics: {stats}")
+
+            # Cleanup: xóa file tạm sau khi load xong
+            try:
+                os.remove(file_path)
+                logger.info(f"🗑️ Cleaned up temporary file: {file_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"⚠️ Failed to cleanup file {file_path}: {cleanup_error}")
 
             return f"Successfully loaded {len(df)} records"
         else:
