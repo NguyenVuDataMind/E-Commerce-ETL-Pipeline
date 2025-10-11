@@ -638,18 +638,18 @@ class ShopeeOrderLoader:
                 return True
 
             # Đảm bảo có đủ các cột cần thiết cho schema
-            if "source_request_id" not in df_export.columns:
-                df_export["source_request_id"] = None
-            if "ingested_at" not in df_export.columns:
+            if "source_request_id" not in df_deduped.columns:
+                df_deduped["source_request_id"] = None
+            if "ingested_at" not in df_deduped.columns:
                 from datetime import datetime
 
-                df_export["ingested_at"] = datetime.utcnow()
+                df_deduped["ingested_at"] = datetime.utcnow()
 
             # Chuẩn hóa datetime: chuyển epoch/ISO -> datetime, rồi bỏ timezone
-            df_export = self._normalize_datetime_fields(df_export)
-            df_export = self._convert_datetime_to_naive(df_export)
+            df_deduped = self._normalize_datetime_fields(df_deduped)
+            df_deduped = self._convert_datetime_to_naive(df_deduped)
 
-            columns = df_export.columns.tolist()
+            columns = df_deduped.columns.tolist()
             col_list_sql = ", ".join([f"[{c}]" for c in columns])
             on_clause = " AND ".join(
                 [f"target.{pk} = source.{pk}" for pk in primary_keys]
@@ -666,16 +666,16 @@ class ShopeeOrderLoader:
             ]
 
             update_guard = None
-            if "update_time" in df_export.columns:
+            if "update_time" in df_deduped.columns:
                 update_guard = "ISNULL(target.update_time, '1900-01-01') < ISNULL(source.update_time, '1900-01-01')"
 
             extra_changes = []
             if table_name == "orders":
-                if "order_status" in df_export.columns:
+                if "order_status" in df_deduped.columns:
                     extra_changes.append(
                         "ISNULL(target.order_status,'') <> ISNULL(source.order_status,'')"
                     )
-                if "shipping_carrier" in df_export.columns:
+                if "shipping_carrier" in df_deduped.columns:
                     extra_changes.append(
                         "ISNULL(target.shipping_carrier,'') <> ISNULL(source.shipping_carrier,'')"
                     )
@@ -699,11 +699,11 @@ class ShopeeOrderLoader:
             insert_values_sql = ", ".join([f"source.{c}" for c in columns])
 
             # Chia lô nhỏ để tránh câu lệnh quá dài
-            batch_size = min(200, len(df_export)) if len(df_export) > 0 else 0
+            batch_size = min(200, len(df_deduped)) if len(df_deduped) > 0 else 0
 
             with self.db_engine.begin() as conn:
                 total_rows = 0
-                records = df_export.to_dict(orient="records")
+                records = df_deduped.to_dict(orient="records")
                 for i in range(0, len(records), batch_size):
                     batch = records[i : i + batch_size]
 
@@ -743,7 +743,7 @@ class ShopeeOrderLoader:
                     conn.execute(text(merge_sql), params)
                     total_rows += len(batch)
 
-            logger.info(f"✅ Upserted {len(df_export)} rows into {table_full_name}")
+            logger.info(f"✅ Upserted {len(df_deduped)} rows into {table_full_name}")
             return True
 
         except Exception as e:
