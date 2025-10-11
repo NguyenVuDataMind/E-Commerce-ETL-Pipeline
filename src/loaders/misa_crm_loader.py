@@ -287,20 +287,102 @@ class MISACRMLoader:
             logger.error(f"Error preparing DataFrame for {endpoint}: {str(e)}")
             return None
 
+    def _clean_dataframe_for_upsert(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Làm sạch DataFrame trước khi UPSERT để tránh lỗi pyodbc
+        """
+        if df.empty:
+            return df
+
+        df_clean = df.copy()
+        fixed_issues = []
+
+        # Xử lý NaT values cho datetime columns
+        datetime_columns = df_clean.select_dtypes(include=["datetime64"]).columns
+        for col in datetime_columns:
+            na_count = df_clean[col].isna().sum()
+            df_clean[col] = df_clean[col].replace({pd.NaT: None})
+            if na_count > 0:
+                fixed_issues.append(f"Fixed {na_count} NaT values in {col}")
+
+        # Xử lý NaN values cho tất cả columns
+        df_clean = df_clean.where(pd.notnull(df_clean), None)
+
+        # Xử lý string columns có giá trị 'nan', 'N/A', 'null'
+        for col in df_clean.columns:
+            if df_clean[col].dtype == "object":
+                df_clean[col] = (
+                    df_clean[col].astype(str).replace(["nan", "N/A", "null", ""], None)
+                )
+
+        # Xử lý numeric columns - convert string numbers to numeric
+        numeric_columns = df_clean.select_dtypes(include=["int64", "float64"]).columns
+        for col in numeric_columns:
+            df_clean[col] = pd.to_numeric(df_clean[col], errors="coerce")
+
+        # Xử lý text quá dài cho các cột text
+        text_columns = df_clean.select_dtypes(include=["object"]).columns
+        for col in text_columns:
+            if col in [
+                "order_sale_order_name",
+                "item_description",
+                "item_description_product",
+            ]:
+                # Truncate text quá dài (4000 characters)
+                df_clean[col] = df_clean[col].astype(str).str[:4000]
+
+        # Log các vấn đề đã fix
+        if fixed_issues:
+            logger.info(f"Fixed data quality issues: {fixed_issues}")
+
+        return df_clean
+
     def _upsert_records(self, endpoint: str, df: pd.DataFrame) -> bool:
         """
-        Thực hiện UPSERT bằng MERGE + VALUES theo lô (không tạo bảng tạm trong DB).
-        - NOT MATCHED -> INSERT
-        - MATCHED AND dữ liệu mới hơn -> UPDATE
+        Thực hiện UPSERT với xử lý lỗi pyodbc được cải thiện theo phân tích chính xác
         """
+        if df.empty:
+            logger.info(f"No data to upsert for {endpoint}")
+            return True
+
         if endpoint not in self.table_mappings:
             logger.error(f"No table mapping found for endpoint: {endpoint}")
             return False
 
+        # Làm sạch DataFrame trước khi xử lý
+        df_clean = self._clean_dataframe_for_upsert(df)
+
+        # Batch size tối ưu theo phân tích: 20 rows cho sale_orders_flattened
+        # 20×97 = 1940 parameters < 2100 limit của SQL Server
+        if endpoint == "sale_orders_flattened":
+            batch_size = min(20, len(df_clean))
+        else:
+            batch_size = min(100, len(df_clean))
+
+        logger.info(
+            f"UPSERT {len(df_clean)} rows to {endpoint} with batch_size={batch_size}"
+        )
+
+        try:
+            return self._execute_upsert_batch(df_clean, endpoint, batch_size)
+        except Exception as e:
+            logger.error(f"Batch UPSERT failed for {endpoint}: {e}")
+            # Fallback: xử lý từng row một
+            return self._upsert_records_row_by_row(df_clean, endpoint)
+
+    def _execute_upsert_batch(
+        self, df: pd.DataFrame, endpoint: str, batch_size: int
+    ) -> bool:
+        """
+        Thực hiện UPSERT batch với error handling tốt hơn
+        """
+        if df.empty:
+            return True
+
         table_full_name = self.table_mappings[endpoint]
         table_info = self._get_table_info(table_full_name)
 
-        # Lấy danh sách cột thật của bảng đích để intersect lần cuối trước khi MERGE
+        # Lấy danh sách cột thật của bảng đích
         db_columns = []
         try:
             with self.db_engine.connect() as conn:
@@ -319,7 +401,6 @@ class MISACRMLoader:
                 if not db_columns:
                     raise RuntimeError("Empty INFORMATION_SCHEMA result")
         except Exception:
-            # Fallback: SELECT TOP 0 * để lấy tên cột theo đúng thứ tự DB
             try:
                 with self.db_engine.connect() as conn:
                     res = conn.execute(
@@ -334,7 +415,7 @@ class MISACRMLoader:
                 )
                 return False
 
-        # Lấy khóa chính (hỗ trợ khóa đơn hoặc khóa kép)
+        # Lấy khóa chính
         primary_keys = self._get_primary_key_for_endpoint(endpoint)
         if isinstance(primary_keys, str):
             primary_keys = [primary_keys]
@@ -342,7 +423,7 @@ class MISACRMLoader:
         # Cột guard để xác định mới hơn
         update_condition = self._get_update_condition_for_endpoint(endpoint)
 
-        # Danh sách cột theo DataFrame (giữ nguyên thứ tự), intersect với DB columns
+        # Danh sách cột theo DataFrame, intersect với DB columns
         df_columns: List[str] = df.columns.tolist()
         columns: List[str] = [c for c in df_columns if c in db_columns]
         if not columns:
@@ -350,17 +431,32 @@ class MISACRMLoader:
                 f"Không có cột nào của DataFrame khớp với bảng {table_full_name}. DF cols: {df_columns} — DB cols: {db_columns}"
             )
             return False
-        # Log chênh lệch cột để dễ debug
-        extra_df_cols = [c for c in df_columns if c not in db_columns]
+
+        # Thêm các cột thiếu vào DataFrame với giá trị NULL
         missing_df_cols = [c for c in db_columns if c not in df_columns]
-        if extra_df_cols:
-            logger.warning(
-                f"{endpoint}: loại bỏ cột không có trong schema đích: {extra_df_cols}"
-            )
         if missing_df_cols:
             logger.warning(
-                f"{endpoint}: DataFrame thiếu các cột có trong bảng đích: {missing_df_cols}"
+                f"{endpoint}: Thêm {len(missing_df_cols)} cột thiếu với giá trị NULL"
             )
+            for c in missing_df_cols:
+                df[c] = None
+
+        # Loại bỏ cột không có trong DB
+        extra_df_cols = [c for c in df_columns if c not in db_columns]
+        if extra_df_cols:
+            logger.info(f"{endpoint}: Loại bỏ cột không có trong DB: {extra_df_cols}")
+            df = df.drop(columns=extra_df_cols, errors="ignore")
+
+        # Reorder DataFrame columns theo thứ tự DB
+        df = df[db_columns]
+
+        # Chốt lại NULL an toàn sau khi thêm cột thiếu (theo phân tích chính xác)
+        # Đảm bảo không còn NaN/NA/NaT trong toàn bộ DataFrame
+        df = df.replace({np.nan: None})
+        df = df.where(pd.notnull(df), None)
+
+        # Lấy lại columns sau mọi chỉnh sửa để đảm bảo đồng nhất
+        columns = df.columns.tolist()
 
         # Bảo đảm các cột khóa có trong DataFrame
         for pk in primary_keys:
@@ -373,27 +469,27 @@ class MISACRMLoader:
         # Xây dựng các phần tử của câu MERGE
         col_list_sql = ", ".join([f"[{c}]" for c in columns])
         on_clause = " AND ".join([f"target.{pk} = source.{pk}" for pk in primary_keys])
-        # Loại bỏ các cột ETL khỏi auto-update; chỉ set thủ công sau
+
+        # Loại bỏ các cột ETL khỏi auto-update
         etl_cols = {"etl_created_at", "etl_updated_at", "etl_batch_id", "etl_source"}
         update_set_cols = [
             c for c in columns if c not in primary_keys and c not in etl_cols
         ]
         set_clauses = [f"target.{c} = source.{c}" for c in update_set_cols]
+
         # Giữ batch/source nếu có trong nguồn
         if "etl_batch_id" in columns:
             set_clauses.append("target.etl_batch_id = source.etl_batch_id")
         if "etl_source" in columns:
             set_clauses.append("target.etl_source = source.etl_source")
+
         # Cập nhật mốc ETL theo UTC
         set_clauses.append("target.etl_updated_at = GETUTCDATE()")
         update_set_sql = ",\n                        ".join(set_clauses)
         insert_values_sql = ", ".join([f"source.{c}" for c in columns])
 
-        # Chia lô để tránh câu lệnh quá dài
-        batch_size = min(100, len(df)) if len(df) > 0 else 0
-
         try:
-            with self.db_engine.begin() as conn:  # Transaction ngắn
+            with self.db_engine.begin() as conn:
                 total_rows = 0
                 records = df.to_dict(orient="records")
                 for i in range(0, len(records), batch_size):
@@ -408,8 +504,8 @@ class MISACRMLoader:
                             pname = f"p_{r_idx}_{c}"
                             placeholders.append(f":{pname}")
                             val = row.get(c, None)
-                            # Tránh bind NaN: thay bằng None để SQL nhận NULL
-                            if isinstance(val, float) and pd.isna(val):
+                            # Tuyệt đối dùng pd.isna, đừng chỉ check float (theo phân tích chính xác)
+                            if pd.isna(val):
                                 val = None
                             params[pname] = val
                         values_rows.append(f"({', '.join(placeholders)})")
@@ -448,8 +544,55 @@ class MISACRMLoader:
             return True
 
         except Exception as e:
-            logger.error(f"Error in _upsert_records for {endpoint}: {str(e)}")
-            return False
+            logger.error(f"Error in _execute_upsert_batch for {endpoint}: {str(e)}")
+            raise
+
+    def _upsert_records_row_by_row(self, df: pd.DataFrame, endpoint: str) -> bool:
+        """
+        UPSERT từng row một khi batch UPSERT thất bại
+        """
+        if df.empty:
+            return True
+
+        success_count = 0
+        error_count = 0
+        total_rows = len(df)
+
+        logger.info(f"Starting row-by-row UPSERT for {endpoint}: {total_rows} rows")
+
+        for index, row in df.iterrows():
+            try:
+                # Tạo DataFrame với 1 row
+                single_row_df = pd.DataFrame([row])
+
+                # Thực hiện UPSERT cho 1 row
+                result = self._execute_upsert_batch(single_row_df, endpoint, 1)
+                if result:
+                    success_count += 1
+                else:
+                    error_count += 1
+
+            except Exception as e:
+                error_count += 1
+                logger.error(f"Row {index} failed for {endpoint}: {e}")
+
+                # Nếu quá nhiều lỗi, dừng lại
+                if error_count > 10:
+                    logger.error(
+                        f"Too many errors ({error_count}), stopping upsert for {endpoint}"
+                    )
+                    break
+
+        # Tính success rate thực tế
+        actual_success_rate = (success_count / total_rows) * 100
+        actual_error_rate = (error_count / total_rows) * 100
+
+        # Log kết quả thực tế
+        logger.info(
+            f"Row-by-row UPSERT completed for {endpoint}: {success_count}/{total_rows} ({actual_success_rate:.1f}%) success, {error_count}/{total_rows} ({actual_error_rate:.1f}%) errors"
+        )
+
+        return success_count > 0
 
     def _get_primary_key_for_endpoint(self, endpoint: str) -> Any:
         """
@@ -488,63 +631,6 @@ class MISACRMLoader:
             # sale_orders_flattened chưa có modified_date trong schema → tạm thời không áp guard thời gian
         }
         return conditions.get(endpoint)
-
-    def _build_merge_sql(
-        self,
-        endpoint: str,
-        table_info: Dict,
-        temp_table: str,
-        primary_key: str,
-        columns: List[str],
-        update_condition: Optional[str] = None,
-    ) -> str:
-        """
-        Build SQL MERGE statement for UPSERT operation
-
-        Args:
-            endpoint: MISA CRM endpoint name
-            table_info: Table schema and name info
-            temp_table: Temporary table name
-            primary_key: Primary key column name
-            columns: List of DataFrame columns
-
-        Returns:
-            SQL MERGE statement
-        """
-        schema = table_info["schema"]
-        table = table_info["table"]
-
-        # Filter out ETL metadata columns for matching conditions
-        data_columns = [col for col in columns if not col.startswith("etl_")]
-
-        # Build UPDATE SET clause
-        update_set = []
-        for col in data_columns:
-            if col != primary_key:  # Don't update primary key
-                update_set.append(f"target.{col} = source.{col}")
-
-        # Add ETL metadata update
-        update_set.append("target.etl_updated_at = GETDATE()")
-
-        # Build INSERT columns and values
-        insert_columns = ", ".join(columns)
-        insert_values = ", ".join([f"source.{col}" for col in columns])
-
-        merge_sql = f"""
-        MERGE [{schema}].[{table}] AS target
-        USING {temp_table} AS source
-        ON target.{primary_key} = source.{primary_key}
-
-        WHEN MATCHED THEN
-            UPDATE SET
-                {', '.join(update_set)}
-
-        WHEN NOT MATCHED THEN
-            INSERT ({insert_columns})
-            VALUES ({insert_values});
-        """
-
-        return merge_sql
 
     def _load_with_pyodbc(self, df: pd.DataFrame, table_full_name: str) -> bool:
         """

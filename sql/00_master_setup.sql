@@ -201,7 +201,8 @@ CREATE TABLE staging.misa_customers (
 );
 GO
 CREATE INDEX IX_misa_customers_account_number ON staging.misa_customers(account_number);
-CREATE INDEX IX_misa_customers_account_code ON staging.misa_customers(account_code);
+-- CREATE INDEX IX_misa_customers_account_code ON staging.misa_customers(account_code);
+-- Index này đã bị xóa vì cột account_code không tồn tại trong bảng misa_customers
 CREATE INDEX IX_misa_customers_modified_date ON staging.misa_customers(modified_date);
 GO
 

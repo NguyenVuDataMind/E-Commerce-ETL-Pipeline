@@ -637,8 +637,16 @@ class ShopeeOrderLoader:
                 )
                 return True
 
+            # Đảm bảo có đủ các cột cần thiết cho schema
+            if "source_request_id" not in df_export.columns:
+                df_export["source_request_id"] = None
+            if "ingested_at" not in df_export.columns:
+                from datetime import datetime
+
+                df_export["ingested_at"] = datetime.utcnow()
+
             # Chuẩn hóa datetime: chuyển epoch/ISO -> datetime, rồi bỏ timezone
-            df_export = self._normalize_datetime_fields(df_deduped)
+            df_export = self._normalize_datetime_fields(df_export)
             df_export = self._convert_datetime_to_naive(df_export)
 
             columns = df_export.columns.tolist()
