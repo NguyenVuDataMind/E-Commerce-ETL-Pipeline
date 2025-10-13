@@ -289,58 +289,6 @@ class MISACRMLoader:
             logger.error(f"Error preparing DataFrame for {endpoint}: {str(e)}")
             return None
 
-    def _clean_dataframe_for_upsert(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Làm sạch DataFrame trước khi UPSERT để tránh lỗi pyodbc
-        """
-        if df.empty:
-            return df
-
-        df_clean = df.copy()
-        fixed_issues = []
-
-        # Xử lý NaT values cho datetime columns
-        datetime_columns = df_clean.select_dtypes(include=["datetime64"]).columns
-        for col in datetime_columns:
-            na_count = df_clean[col].isna().sum()
-            df_clean[col] = df_clean[col].replace({pd.NaT: None})
-            if na_count > 0:
-                fixed_issues.append(f"Fixed {na_count} NaT values in {col}")
-
-        # Xử lý NaN values cho tất cả columns
-        df_clean = df_clean.where(pd.notnull(df_clean), None)
-
-        # Xử lý string columns có giá trị 'nan', 'N/A', 'null', 'None'
-        for col in df_clean.columns:
-            if df_clean[col].dtype == "object":
-                df_clean[col] = (
-                    df_clean[col]
-                    .astype(str)
-                    .replace(["nan", "N/A", "null", "NULL", "None", "none", ""], None)
-                )
-
-        # Xử lý numeric columns - convert string numbers to numeric
-        numeric_columns = df_clean.select_dtypes(include=["int64", "float64"]).columns
-        for col in numeric_columns:
-            df_clean[col] = pd.to_numeric(df_clean[col], errors="coerce")
-
-        # Xử lý text quá dài cho các cột text
-        text_columns = df_clean.select_dtypes(include=["object"]).columns
-        for col in text_columns:
-            if col in [
-                "order_sale_order_name",
-                "item_description",
-                "item_description_product",
-            ]:
-                # Truncate text quá dài (4000 characters)
-                df_clean[col] = df_clean[col].astype(str).str[:4000]
-
-        # Log các vấn đề đã fix
-        if fixed_issues:
-            logger.info(f"Fixed data quality issues: {fixed_issues}")
-
-        return df_clean
-
     def _upsert_records(self, endpoint: str, df: pd.DataFrame) -> bool:
         """
         Thực hiện UPSERT với xử lý lỗi pyodbc được cải thiện theo phân tích chính xác
@@ -353,8 +301,9 @@ class MISACRMLoader:
             logger.error(f"No table mapping found for endpoint: {endpoint}")
             return False
 
-        # Làm sạch DataFrame trước khi xử lý
-        df_clean = self._clean_dataframe_for_upsert(df)
+        # DataFrame đã được chuẩn hóa trong _prepare_dataframe_for_upsert()
+        # Không cần làm sạch thêm để tránh lỗi 8114
+        df_clean = df
 
         # Batch size tối ưu theo phân tích: 20 rows cho sale_orders_flattened
         # 20×97 = 1940 parameters < 2100 limit của SQL Server
