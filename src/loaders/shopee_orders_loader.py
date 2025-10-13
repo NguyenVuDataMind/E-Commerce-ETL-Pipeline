@@ -444,11 +444,13 @@ class ShopeeOrderLoader:
         # Xử lý NaN values cho tất cả columns
         df_clean = df_clean.where(pd.notnull(df_clean), None)
 
-        # Xử lý string columns có giá trị 'nan', 'N/A', 'null'
+        # Xử lý string columns có giá trị 'nan', 'N/A', 'null', 'None'
         for col in df_clean.columns:
             if df_clean[col].dtype == "object":
                 df_clean[col] = (
-                    df_clean[col].astype(str).replace(["nan", "N/A", "null", ""], None)
+                    df_clean[col]
+                    .astype(str)
+                    .replace(["nan", "N/A", "null", "NULL", "None", "none", ""], None)
                 )
 
         # Xử lý numeric columns - convert string numbers to numeric

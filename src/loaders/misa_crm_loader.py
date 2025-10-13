@@ -261,8 +261,10 @@ class MISACRMLoader:
         try:
             df_prepared = df.copy()
 
-            # Add ETL metadata columns
-            current_time = datetime.now()
+            # Add ETL metadata columns (UTC-naive để đồng bộ DATETIME2)
+            from datetime import timezone
+
+            current_time = datetime.now(timezone.utc).replace(tzinfo=None)
             df_prepared["etl_batch_id"] = (
                 f"misa_crm_{endpoint}_{current_time.strftime('%Y%m%d_%H%M%S')}"
             )
@@ -308,11 +310,13 @@ class MISACRMLoader:
         # Xử lý NaN values cho tất cả columns
         df_clean = df_clean.where(pd.notnull(df_clean), None)
 
-        # Xử lý string columns có giá trị 'nan', 'N/A', 'null'
+        # Xử lý string columns có giá trị 'nan', 'N/A', 'null', 'None'
         for col in df_clean.columns:
             if df_clean[col].dtype == "object":
                 df_clean[col] = (
-                    df_clean[col].astype(str).replace(["nan", "N/A", "null", ""], None)
+                    df_clean[col]
+                    .astype(str)
+                    .replace(["nan", "N/A", "null", "NULL", "None", "none", ""], None)
                 )
 
         # Xử lý numeric columns - convert string numbers to numeric
