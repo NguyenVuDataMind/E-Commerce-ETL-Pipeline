@@ -336,10 +336,32 @@ class TikTokShopOrderLoader:
             if "order_id" not in columns:
                 logger.error("Thiếu cột khóa 'order_id' trong DataFrame TikTok")
                 return False
+            if "item_id" not in columns:
+                logger.error(
+                    "Thiếu cột khóa 'item_id' trong DataFrame TikTok (yêu cầu khóa tổng hợp order_id + item_id)"
+                )
+                return False
+
+            # Khử trùng lặp theo khóa (order_id, item_id), ưu tiên bản có update_time mới nhất nếu có
+            try:
+                if "update_time" in df.columns:
+                    df = df.sort_values("update_time").drop_duplicates(
+                        ["order_id", "item_id"], keep="last"
+                    )
+                else:
+                    df = df.drop_duplicates(["order_id", "item_id"], keep="last")
+            except Exception:
+                # Nếu có lỗi trong bước khử trùng vẫn tiếp tục với df hiện tại
+                pass
+
+            # Cập nhật lại danh sách cột sau khi khử trùng (phòng trường hợp reindex)
+            columns = df.columns.tolist()
 
             col_list_sql = ", ".join([f"[{c}]" for c in columns])
-            on_clause = "target.order_id = source.order_id"
-            update_set_cols = [c for c in columns if c != "order_id"]
+            on_clause = (
+                "target.order_id = source.order_id AND target.item_id = source.item_id"
+            )
+            update_set_cols = [c for c in columns if c not in ("order_id", "item_id")]
 
             # Guard cập nhật: ưu tiên update_time; thêm trạng thái/ vận chuyển nếu có
             guards = []
