@@ -80,9 +80,9 @@ class MISACRMExtractor:
                         if isinstance(exp, datetime):
                             if exp.tzinfo is None:
                                 # Gắn +07 rồi chuyển về UTC-aware
-                                exp = exp.replace(tzinfo=timezone(timedelta(hours=7))).astimezone(
-                                    timezone.utc
-                                )
+                                exp = exp.replace(
+                                    tzinfo=timezone(timedelta(hours=7))
+                                ).astimezone(timezone.utc)
                             else:
                                 exp = exp.astimezone(timezone.utc)
                             self.token_expires_at = exp
@@ -130,10 +130,9 @@ class MISACRMExtractor:
                 expires_for_db = self.token_expires_at
                 if isinstance(expires_for_db, datetime):
                     if expires_for_db.tzinfo is not None:
-                        expires_for_db = (
-                            expires_for_db.astimezone(timezone(timedelta(hours=7)))
-                            .replace(tzinfo=None)
-                        )
+                        expires_for_db = expires_for_db.astimezone(
+                            timezone(timedelta(hours=7))
+                        ).replace(tzinfo=None)
 
                 params = (
                     "misa_crm",  # For USING clause
