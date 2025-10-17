@@ -368,9 +368,9 @@ class TikTokShopOrderLoader:
             # Guard cập nhật: ưu tiên update_time; thêm trạng thái/ vận chuyển nếu có
             guards = []
             if "update_time" in columns:
-                # So sánh BIGINT epoch theo dạng số, không dùng chuỗi ngày
+                # So sánh DATETIME2 an toàn, tránh dùng 0 (int) cho NULL
                 guards.append(
-                    "ISNULL(target.update_time, 0) < ISNULL(source.update_time, 0)"
+                    "COALESCE(target.update_time, '1900-01-01') < COALESCE(source.update_time, '1900-01-01')"
                 )
             if "order_status" in columns:
                 guards.append(

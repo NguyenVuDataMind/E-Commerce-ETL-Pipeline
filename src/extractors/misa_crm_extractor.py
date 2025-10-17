@@ -72,7 +72,24 @@ class MISACRMExtractor:
                 if row:
                     logger.info("Loaded MISA CRM tokens from database.")
                     self.access_token = row.access_token
-                    self.token_expires_at = row.expires_at if row.expires_at else None
+                    # Chuẩn hóa expires_at từ DB:
+                    # - DB lưu DATETIME2-naive theo giờ Việt Nam (+07)
+                    # - Để so sánh hợp lệ, chuyển về UTC-aware
+                    if row.expires_at:
+                        exp = row.expires_at
+                        if isinstance(exp, datetime):
+                            if exp.tzinfo is None:
+                                # Gắn +07 rồi chuyển về UTC-aware
+                                exp = exp.replace(tzinfo=timezone(timedelta(hours=7))).astimezone(
+                                    timezone.utc
+                                )
+                            else:
+                                exp = exp.astimezone(timezone.utc)
+                            self.token_expires_at = exp
+                        else:
+                            self.token_expires_at = None
+                    else:
+                        self.token_expires_at = None
                     return
 
         except pyodbc.Error as e:
@@ -103,20 +120,29 @@ class MISACRMExtractor:
                         UPDATE SET
                             access_token = ?,
                             expires_at = ?,
-                            last_updated = GETUTCDATE()
+                            last_updated = DATEADD(HOUR, 7, GETUTCDATE())
                     WHEN NOT MATCHED THEN
                         INSERT (platform, access_token, refresh_token, expires_at)
                         VALUES (?, ?, ?, ?);
                 """
 
+                # Lưu expires_at về DB theo DATETIME2-naive +07 để đồng bộ với các nền tảng
+                expires_for_db = self.token_expires_at
+                if isinstance(expires_for_db, datetime):
+                    if expires_for_db.tzinfo is not None:
+                        expires_for_db = (
+                            expires_for_db.astimezone(timezone(timedelta(hours=7)))
+                            .replace(tzinfo=None)
+                        )
+
                 params = (
                     "misa_crm",  # For USING clause
                     self.access_token,
-                    self.token_expires_at,
+                    expires_for_db,
                     "misa_crm",  # For INSERT clause
                     self.access_token,
                     "",  # MISA doesn't use refresh_token
-                    self.token_expires_at,
+                    expires_for_db,
                 )
 
                 cursor.execute(merge_sql, params)
@@ -149,10 +175,24 @@ class MISACRMExtractor:
         if not self.access_token or not self.token_expires_at:
             return True
 
+        # Chuẩn hóa thời điểm hết hạn về UTC-aware trước khi so sánh
+        expiry = self.token_expires_at
+        if isinstance(expiry, datetime):
+            if expiry.tzinfo is None:
+                # Giả định giá trị naive đến từ DB là +07-naive
+                expiry = expiry.replace(tzinfo=timezone(timedelta(hours=7))).astimezone(
+                    timezone.utc
+                )
+            else:
+                expiry = expiry.astimezone(timezone.utc)
+        else:
+            # Nếu không phải datetime hợp lệ, coi như đã hết hạn
+            return True
+
         buffer_time = datetime.now(timezone.utc) + timedelta(
             seconds=settings.misa_crm_token_refresh_buffer
         )
-        return buffer_time >= self.token_expires_at
+        return buffer_time >= expiry
 
     def get_access_token(self, force_refresh: bool = False) -> Optional[str]:
         """Lấy access token, tự động làm mới nếu cần, tuân thủ tài liệu API v2."""
@@ -473,6 +513,13 @@ class MISACRMExtractor:
             logger.info(
                 f"Lấy dữ liệu incremental từ {endpoint_name} (lookback: {lookback_hours} giờ, cutoff: {cutoff_time.isoformat()})"
             )
+
+        # Chuẩn hóa cutoff_time về UTC-aware để so sánh an toàn
+        if isinstance(cutoff_time, datetime):
+            if cutoff_time.tzinfo is None:
+                cutoff_time = cutoff_time.replace(tzinfo=timezone.utc)
+            else:
+                cutoff_time = cutoff_time.astimezone(timezone.utc)
 
         # Lấy dữ liệu với giới hạn trang nhỏ cho incremental
         # Lý do: tránh kéo toàn bộ và treo task khi không có thay đổi lớn
