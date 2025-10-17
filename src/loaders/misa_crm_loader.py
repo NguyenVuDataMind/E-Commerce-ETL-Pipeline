@@ -261,10 +261,10 @@ class MISACRMLoader:
         try:
             df_prepared = df.copy()
 
-            # Add ETL metadata columns (UTC-naive để đồng bộ DATETIME2)
-            from datetime import timezone
+            # Add ETL metadata columns theo múi giờ Việt Nam (+07), lưu tz-naive
+            import pandas as pd
 
-            current_time = datetime.now(timezone.utc).replace(tzinfo=None)
+            current_time = pd.Timestamp.now(tz="Asia/Ho_Chi_Minh").tz_localize(None)
             df_prepared["etl_batch_id"] = (
                 f"misa_crm_{endpoint}_{current_time.strftime('%Y%m%d_%H%M%S')}"
             )
@@ -436,8 +436,8 @@ class MISACRMLoader:
         if "etl_source" in columns:
             set_clauses.append("target.etl_source = source.etl_source")
 
-        # Cập nhật mốc ETL theo UTC
-        set_clauses.append("target.etl_updated_at = GETUTCDATE()")
+        # Cập nhật mốc ETL theo giờ Việt Nam (+07)
+        set_clauses.append("target.etl_updated_at = DATEADD(HOUR, 7, GETUTCDATE())")
         update_set_sql = ",\n                        ".join(set_clauses)
         insert_values_sql = ", ".join([f"source.{c}" for c in columns])
 
@@ -714,9 +714,11 @@ class MISACRMLoader:
         # Datetime
         if isinstance(value, (pd.Timestamp, datetime)):
             if hasattr(value, "tz") and value.tz is not None:
-                value = (
-                    value.tz_convert(None) if hasattr(value, "tz_convert") else value
-                )
+                try:
+                    # Chuẩn hóa về +07-naive trước khi format
+                    value = value.tz_convert("Asia/Ho_Chi_Minh").tz_localize(None)
+                except Exception:
+                    value = value.tz_localize(None)
             try:
                 return value.strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
@@ -748,9 +750,9 @@ class MISACRMLoader:
             s = df_norm[col]
             # Bỏ qua nếu là các kiểu không liên quan
             if pd.api.types.is_datetime64_any_dtype(s):
-                # Loại bỏ timezone (nếu có) và thay NaT bằng None
+                # Chuẩn hóa về +07-naive và thay NaT bằng None
                 try:
-                    s2 = s.dt.tz_convert(None)
+                    s2 = s.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
                 except Exception:
                     s2 = s
                 df_norm[col] = s2.where(pd.notna(s2), None)
@@ -768,12 +770,12 @@ class MISACRMLoader:
                         )
                     else:
                         continue
-                    dt = dt.dt.tz_convert(None)
+                    dt = dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
                     df_norm[col] = dt.where(pd.notna(dt), None)
                 elif pd.api.types.is_string_dtype(s):
                     dt = pd.to_datetime(s, errors="coerce", utc=True)
                     if dt.notna().any():
-                        dt = dt.dt.tz_convert(None)
+                        dt = dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
                         df_norm[col] = dt.where(pd.notna(dt), None)
         return df_norm
 

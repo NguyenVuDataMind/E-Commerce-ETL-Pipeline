@@ -86,17 +86,19 @@ class ShopeeOrderLoader:
             return {"schema": "staging", "table": table_full_name}
 
     def _convert_datetime_to_naive(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Chuyển đổi datetime columns từ timezone-aware sang timezone-naive"""
+        """Chuyển datetime tz-aware về tz-naive theo múi giờ Việt Nam (+07)."""
         df_copy = df.copy()
-
         for col in df_copy.columns:
             if df_copy[col].dtype == "datetime64[ns, UTC]":
-                df_copy[col] = df_copy[col].dt.tz_localize(None)
-            elif "datetime" in str(df_copy[col].dtype):
-                df_copy[col] = pd.to_datetime(df_copy[col], utc=True).dt.tz_localize(
-                    None
+                df_copy[col] = (
+                    df_copy[col].dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
                 )
-
+            elif "datetime" in str(df_copy[col].dtype):
+                df_copy[col] = (
+                    pd.to_datetime(df_copy[col], utc=True)
+                    .dt.tz_convert("Asia/Ho_Chi_Minh")
+                    .dt.tz_localize(None)
+                )
         return df_copy
 
     def _normalize_datetime_fields(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -142,18 +144,24 @@ class ShopeeOrderLoader:
                 elif s_float.dropna().gt(1e9).any():
                     dt = pd.to_datetime(s_float, unit="s", errors="coerce", utc=True)
                 else:
-                    # Nếu nhỏ hơn, cố gắng parse như giây
                     dt = pd.to_datetime(s_float, unit="s", errors="coerce", utc=True)
-                df_norm[col] = dt.dt.tz_convert(None)
+                df_norm[col] = (
+                    dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
+                    if dt.dt.tz is not None
+                    else dt
+                )
                 continue
 
             # Trường hợp string ISO hoặc chuỗi khác
             if pd.api.types.is_string_dtype(s):
                 # Thử parse ISO; pandas hỗ trợ hậu tố Z nếu utc=True
                 dt = pd.to_datetime(s, errors="coerce", utc=True)
-                # Nếu toàn bộ NaT (parse thất bại), giữ nguyên
                 if dt.notna().any():
-                    df_norm[col] = dt.dt.tz_convert(None)
+                    df_norm[col] = (
+                        dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
+                        if dt.dt.tz is not None
+                        else dt
+                    )
 
         return df_norm
 
@@ -278,6 +286,13 @@ class ShopeeOrderLoader:
 
             # Convert datetime columns to timezone-naive
             df_export = self._convert_datetime_to_naive(df_deduped)
+
+            # Bổ sung etl_* theo +07 nếu thiếu (full load dùng INSERT qua to_sql)
+            current_time_vn = pd.Timestamp.now(tz="Asia/Ho_Chi_Minh").tz_localize(None)
+            if "etl_created_at" not in df_export.columns:
+                df_export["etl_created_at"] = current_time_vn
+            if "etl_updated_at" not in df_export.columns:
+                df_export["etl_updated_at"] = current_time_vn
 
             # Load to database (giới hạn chunksize nhỏ để tránh quá tải tham số ODBC/SQL Server)
             df_export.to_sql(
@@ -610,9 +625,16 @@ class ShopeeOrderLoader:
         if "source_request_id" not in df_deduped.columns:
             df_deduped["source_request_id"] = None
         if "ingested_at" not in df_deduped.columns:
-            from datetime import datetime
+            df_deduped["ingested_at"] = pd.Timestamp.now(
+                tz="Asia/Ho_Chi_Minh"
+            ).tz_localize(None)
 
-            df_deduped["ingested_at"] = datetime.utcnow()
+        # Thiết lập etl_* theo +07 cho đường MERGE (INSERT)
+        current_time_vn = pd.Timestamp.now(tz="Asia/Ho_Chi_Minh").tz_localize(None)
+        if "etl_created_at" not in df_deduped.columns:
+            df_deduped["etl_created_at"] = current_time_vn
+        if "etl_updated_at" not in df_deduped.columns:
+            df_deduped["etl_updated_at"] = current_time_vn
 
         # Chuẩn hóa datetime: chuyển epoch/ISO -> datetime, rồi bỏ timezone
         df_deduped = self._normalize_datetime_fields(df_deduped)
@@ -680,8 +702,8 @@ class ShopeeOrderLoader:
         if "etl_source" in columns:
             set_clauses.append("target.etl_source = source.etl_source")
 
-        # Cập nhật mốc ETL theo UTC
-        set_clauses.append("target.etl_updated_at = GETUTCDATE()")
+        # Cập nhật mốc ETL theo giờ Việt Nam (+07)
+        set_clauses.append("target.etl_updated_at = DATEADD(HOUR, 7, GETUTCDATE())")
         update_set_sql = ",\n                        ".join(set_clauses)
         insert_values_sql = ", ".join([f"source.{c}" for c in columns])
 

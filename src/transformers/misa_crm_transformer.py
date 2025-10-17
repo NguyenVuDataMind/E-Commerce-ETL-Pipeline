@@ -51,8 +51,8 @@ class MISACRMTransformer:
         df = df.copy()
         df["etl_batch_id"] = self.batch_id
 
-        # FIXED: Sử dụng pd.Timestamp để đảm bảo datetime được xử lý đúng
-        current_time = pd.Timestamp.now(tz="UTC").tz_convert(None)
+        # Sử dụng giờ Việt Nam (+07) và lưu dạng tz-naive để khớp DATETIME2
+        current_time = pd.Timestamp.now(tz="Asia/Ho_Chi_Minh").tz_localize(None)
         df["etl_created_at"] = current_time
         df["etl_updated_at"] = current_time
         df["etl_source"] = "misa_crm_api"
@@ -171,15 +171,13 @@ class MISACRMTransformer:
 
         for col in date_columns:
             if col in df.columns:
-                # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
+                # Parse ISO có offset và chuẩn hóa về múi giờ Việt Nam (+07), lưu tz-naive
                 df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
-                # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
                 df[col] = (
-                    df[col].dt.tz_convert(None)
+                    df[col].dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
                     if df[col].dt.tz is not None
                     else df[col]
                 )
-                # FIXED: Chuyển NaT thành None để tránh lỗi data type
                 df[col] = df[col].where(pd.notna(df[col]), None)
 
         # Boolean columns
@@ -434,12 +432,25 @@ class MISACRMTransformer:
         ]
         for col in order_date_columns:
             if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors="coerce")
+                # Chuẩn hóa về +07-naive
+                df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
+                df[col] = (
+                    df[col].dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
+                    if df[col].dt.tz is not None
+                    else df[col]
+                )
+                df[col] = df[col].where(pd.notna(df[col]), None)
 
         item_date_columns = ["item_expire_date"]
         for col in item_date_columns:
             if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors="coerce")
+                df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
+                df[col] = (
+                    df[col].dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
+                    if df[col].dt.tz is not None
+                    else df[col]
+                )
+                df[col] = df[col].where(pd.notna(df[col]), None)
 
         # Boolean columns
         boolean_columns = ["order_is_use_currency", "item_is_promotion"]
@@ -504,15 +515,12 @@ class MISACRMTransformer:
 
         for col in date_columns:
             if col in df.columns:
-                # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
                 df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
-                # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
                 df[col] = (
-                    df[col].dt.tz_convert(None)
+                    df[col].dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
                     if df[col].dt.tz is not None
                     else df[col]
                 )
-                # FIXED: Chuyển NaT thành None để tránh lỗi data type
                 df[col] = df[col].where(pd.notna(df[col]), None)
 
         # Boolean columns
@@ -545,15 +553,12 @@ class MISACRMTransformer:
 
         for col in date_columns:
             if col in df.columns:
-                # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
                 df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
-                # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
                 df[col] = (
-                    df[col].dt.tz_convert(None)
+                    df[col].dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
                     if df[col].dt.tz is not None
                     else df[col]
                 )
-                # FIXED: Chuyển NaT thành None để tránh lỗi data type
                 df[col] = df[col].where(pd.notna(df[col]), None)
 
         # Boolean columns
@@ -600,15 +605,12 @@ class MISACRMTransformer:
 
         for col in date_columns:
             if col in df.columns:
-                # FIXED: Xử lý timezone cho datetime columns (ISO8601 +07:00)
                 df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
-                # FIXED: Chuyển timezone-aware datetime về timezone-naive để SQL Server hiểu được
                 df[col] = (
-                    df[col].dt.tz_convert(None)
+                    df[col].dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
                     if df[col].dt.tz is not None
                     else df[col]
                 )
-                # FIXED: Chuyển NaT thành None để tránh lỗi data type
                 df[col] = df[col].where(pd.notna(df[col]), None)
 
         # Boolean columns

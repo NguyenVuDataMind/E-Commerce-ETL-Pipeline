@@ -518,8 +518,8 @@ with DAG(
 
     end_task = BashOperator(
         task_id="end_full_load",
-        bash_command='echo "Sequential Full Load ETL completed: TikTok → MISA → Shopee."',
+        bash_command='echo "Parallel Full Load ETL completed: TikTok + MISA + Shopee."',
     )
 
-    # SEQUENTIAL execution: TikTok Shop → MISA CRM → Shopee Orders
-    start_task >> tiktok_shop_group >> misa_crm_group >> shopee_orders_group >> end_task
+    # PARALLEL execution: chạy đồng thời 3 nền tảng
+    start_task >> [tiktok_shop_group, misa_crm_group, shopee_orders_group] >> end_task

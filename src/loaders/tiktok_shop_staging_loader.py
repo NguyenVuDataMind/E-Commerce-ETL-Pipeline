@@ -195,13 +195,13 @@ class TikTokShopOrderLoader:
 
     def _prepare_dataframe_for_upsert(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
         """
-        Chuẩn hóa DataFrame trước khi UPSERT theo cách full load đang dùng:
-          - Thời gian: giữ BIGINT epoch giây; nếu phát hiện mili-giây (>=1e12) thì chia 1000.
+        Chuẩn hóa DataFrame trước khi UPSERT:
+          - Thời gian: epoch (s/ms) -> DATETIME2-naive theo múi giờ Việt Nam (+07).
           - Tiền/số: ép numeric, thay NaN bằng None để SQL nhận NULL.
           - Số đếm: INT nullable (Int64) rồi cast object để giữ None khi bind.
           - Boolean: map True/False -> 1/0, null -> None (BIT).
           - Chuỗi/JSON: giữ nguyên chuỗi, thay 'nan'/NaN -> None.
-          - etl_*: datetime UTC-naive để khớp DATETIME2.
+          - etl_*: DATETIME2-naive +07 để đồng bộ với MISA.
         """
         try:
             prepared = df.copy()
@@ -231,12 +231,12 @@ class TikTokShopOrderLoader:
             for col in epoch_cols:
                 if col in prepared.columns:
                     s = pd.to_numeric(prepared[col], errors="coerce")
-                    # Nếu giá trị lớn bất thường (>= 1e12) coi là mili-giây -> quy về giây
+                    # Nếu giá trị ms (>=1e12) -> quy về giây
                     s = s.where(s.isna() | (s < 10**12), (s // 1000))
-                    # Dùng Int64 (nullable) rồi cast object để giữ None khi bind
-                    prepared[col] = (
-                        s.astype("Int64").astype("object").where(pd.notnull(s), None)
-                    )
+                    # Convert về datetime +07-naive (DATETIME2)
+                    dt = pd.to_datetime(s, unit="s", utc=True, errors="coerce")
+                    dt = dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
+                    prepared[col] = dt.where(pd.notna(dt), None)
 
             # 2) Chuẩn hóa nhóm tiền/tổng (DECIMAL(18,2) phía DB)
             money_cols = [
@@ -295,7 +295,7 @@ class TikTokShopOrderLoader:
             prepared = prepared.replace("nan", None)
             prepared = prepared.where(pd.notnull(prepared), None)
 
-            # 6) etl timestamps -> datetime2 UTC-naive
+            # 6) etl timestamps -> DATETIME2-naive +07
             for etl_col in ["etl_created_at", "etl_updated_at"]:
                 if (
                     etl_col in prepared.columns
@@ -310,7 +310,9 @@ class TikTokShopOrderLoader:
                 ):
                     try:
                         prepared[etl_col] = (
-                            prepared[etl_col].dt.tz_convert("UTC").dt.tz_localize(None)
+                            prepared[etl_col]
+                            .dt.tz_convert("Asia/Ho_Chi_Minh")
+                            .dt.tz_localize(None)
                         )
                     except Exception:
                         pass
@@ -401,8 +403,8 @@ class TikTokShopOrderLoader:
                 set_clauses.append("target.etl_batch_id = source.etl_batch_id")
             if "etl_source" in columns:
                 set_clauses.append("target.etl_source = source.etl_source")
-            # etl_updated_at do hệ thống set theo UTC
-            set_clauses.append("target.etl_updated_at = GETUTCDATE()")
+            # etl_updated_at theo giờ Việt Nam (+07)
+            set_clauses.append("target.etl_updated_at = DATEADD(HOUR, 7, GETUTCDATE())")
             update_set_sql = ",\n                        ".join(set_clauses)
             insert_values_sql = ", ".join([f"source.{c}" for c in columns])
 
