@@ -194,8 +194,8 @@ CREATE TABLE staging.misa_customers (
     modified_date DATETIME2,
     modified_by NVARCHAR(255),
     last_modified_date DATETIME2,
-    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
-    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
+    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'misa_crm_api'
 );
@@ -301,8 +301,8 @@ CREATE TABLE staging.misa_sale_orders_flattened (
     item_sale_order_product NVARCHAR(MAX),
     has_multiple_items BIT DEFAULT 0,
     total_items_in_order INT DEFAULT 0,
-    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
-    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
+    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'misa_crm_api',
     CONSTRAINT PK_misa_sale_orders_flattened PRIMARY KEY (order_id, item_id)
@@ -379,8 +379,8 @@ CREATE TABLE staging.misa_contacts (
     created_by NVARCHAR(255),
     modified_date DATETIME2,
     modified_by NVARCHAR(255),
-    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
-    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
+    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'misa_crm_api'
 );
@@ -402,8 +402,8 @@ CREATE TABLE staging.misa_stocks (
     created_by NVARCHAR(255),
     modified_date DATETIME2,
     modified_by NVARCHAR(255),
-    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
-    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
+    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'misa_crm_api'
 );
@@ -449,8 +449,8 @@ CREATE TABLE staging.misa_products (
     created_by NVARCHAR(255),
     modified_date DATETIME2,
     modified_by NVARCHAR(255),
-    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
-    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
+    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'misa_crm_api'
 );
@@ -882,9 +882,9 @@ CREATE TABLE staging.shopee_buyer_proof_of_collection (
     order_sn NVARCHAR(50) NOT NULL,
     image_url NVARCHAR(400) NOT NULL,
     source_request_id NVARCHAR(100),
-    ingested_at DATETIME2 DEFAULT GETUTCDATE(),
-    etl_created_at DATETIME2 DEFAULT GETUTCDATE(),
-    etl_updated_at DATETIME2 DEFAULT GETUTCDATE(),
+    ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
+    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
+    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
     etl_batch_id NVARCHAR(50),
     etl_source NVARCHAR(50) DEFAULT 'shopee_api',
     PRIMARY KEY (order_sn, image_url),
@@ -931,7 +931,7 @@ CREATE TABLE etl_control.api_token_storage (
     refresh_token NVARCHAR(MAX),
     expires_at DATETIME2,
     shop_cipher NVARCHAR(255),
-    last_updated DATETIME2 DEFAULT GETUTCDATE()
+    last_updated DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE())
 );
 GO
 
