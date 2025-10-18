@@ -384,6 +384,29 @@ class MISACRMTransformer:
             "order_invoiced_amount",
             "order_un_invoiced_amount",
             "order_exchange_rate",
+            "order_custom_field1Summary",
+            "order_discount_overall",
+            "order_tax_overall",
+            "order_total_overall",
+            "order_discount_overall_oc",
+            "order_tax_overall_oc",
+            "order_total_overall_oc",
+            "order_discount_percent_overall",
+            "order_tax_percent_overall",
+            "order_to_currency_after_discount_summary",
+            "order_to_currency_oc_after_discount_summary",
+            "order_shipping_amount_summary",
+            "order_sale_order_process_cost",
+            "order_liquidate_amount",
+            "order_to_currency_summary_oc",
+            "order_discount_summary_oc",
+            "order_tax_summary_oc",
+            "order_total_summary_oc",
+            "order_liquidate_amount_oc",
+            "order_sale_order_amount_oc",
+            "order_total_receipted_amount_oc",
+            "order_balance_receipt_amount_oc",
+            "order_invoiced_amount_oc",
         ]
         for col in order_numeric_columns:
             if col in df.columns:
@@ -414,6 +437,11 @@ class MISACRMTransformer:
             "item_custom_field1",
             "item_produced_quantity",
             "item_quantity_ordered",
+            "item_to_currency_oc",
+            "item_discount_oc",
+            "item_tax_oc",
+            "item_total_oc",
+            "item_to_currency_oc_after_discount",
         ]
         for col in item_numeric_columns:
             if col in df.columns:
@@ -429,6 +457,9 @@ class MISACRMTransformer:
             "order_paid_date",
             "order_invoice_date",
             "order_production_date",
+            "order_created_date",
+            "order_modified_date",
+            "order_approved_date",
         ]
         for col in order_date_columns:
             if col in df.columns:
@@ -453,7 +484,17 @@ class MISACRMTransformer:
                 df[col] = df[col].where(pd.notna(df[col]), None)
 
         # Boolean columns
-        boolean_columns = ["order_is_use_currency", "item_is_promotion"]
+        boolean_columns = [
+            "order_is_use_currency",
+            "item_is_promotion",
+            "order_is_deleted",
+            "order_is_public",
+            "order_is_correct_route",
+            "order_is_visited",
+            "order_is_parent_sale_order",
+            "order_is_invoiced",
+            "order_is_sync_price_after_discount",
+        ]
         for col in boolean_columns:
             if col in df.columns:
                 # FIXED: Xử lý null values cho boolean columns (NaN → False)

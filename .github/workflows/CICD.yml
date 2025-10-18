@@ -384,9 +384,9 @@ jobs:
           echo 'Docker và Docker Compose đã sẵn sàng'
         "
         
-    - name: Deploy với Docker Compose
+    - name: Force rebuild SQL Server
       run: |
-        echo "Deploying với Docker Compose..."
+        echo "Force rebuilding SQL Server để cập nhật schema..."
         ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ env.VM_USER }}@${{ env.VM_HOST }} "
           cd /home/${{ env.VM_USER }}/facolos-data-pipelines
           
@@ -394,9 +394,35 @@ jobs:
           echo 'Stopping existing containers...'
           docker compose down || true
           
-          # Pull latest images và build
-          echo 'Building và starting containers...'
+          # Force remove SQL Server volume để đảm bảo schema mới
+          echo 'Removing SQL Server volume để force schema update...'
+          docker volume rm facolos-data-pipelines_sqlserver_data || true
+          
+          # Build SQL Server container với no-cache
+          echo 'Building SQL Server container với no-cache...'
+          docker compose build --no-cache sqlserver
+          
+          # Start SQL Server trước để đảm bảo schema được tạo
+          echo 'Starting SQL Server container...'
+          docker compose up -d sqlserver
+          
+          # Wait for SQL Server to be ready
+          echo 'Waiting for SQL Server to be ready...'
+          sleep 30
+        "
+        
+    - name: Deploy với Docker Compose
+      run: |
+        echo "Deploying với Docker Compose..."
+        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ env.VM_USER }}@${{ env.VM_HOST }} "
+          cd /home/${{ env.VM_USER }}/facolos-data-pipelines
+          
+          # Build remaining containers
+          echo 'Building remaining containers...'
           docker compose build --no-cache
+          
+          # Start all containers
+          echo 'Starting all containers...'
           docker compose up -d
           
           # Wait for services to be ready
@@ -437,6 +463,13 @@ jobs:
           # Check database connections
           echo 'Checking database connections...'
           docker compose exec -T airflow-webserver airflow connections list || echo 'Không thể list connections'
+          
+          # Verify SQL Server schema đã được cập nhật
+          echo 'Verifying SQL Server schema...'
+          docker compose exec -T sqlserver /opt/mssql-tools18/bin/sqlcmd \
+            -S localhost -U sa -P "${SQL_SERVER_PASSWORD}" \
+            -Q "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tiktok_shop_order_detail' AND COLUMN_NAME IN ('create_time', 'update_time', 'paid_time') ORDER BY COLUMN_NAME;" \
+            -C -N || echo 'Không thể verify schema'
           
           # Check logs for any errors
           echo 'Checking recent logs...'

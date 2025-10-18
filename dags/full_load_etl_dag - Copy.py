@@ -1,0 +1,534 @@
+from datetime import datetime, timedelta
+import json
+import logging
+
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
+from airflow.utils.task_group import TaskGroup
+import pandas as pd
+
+# Add project root to path
+import sys
+
+sys.path.append("/opt/airflow/")
+
+from src.extractors.misa_crm_extractor import MISACRMExtractor
+from src.transformers.misa_crm_transformer import MISACRMTransformer
+from src.loaders.misa_crm_loader import MISACRMLoader
+from src.extractors.tiktok_shop_extractor import TikTokShopOrderExtractor
+from src.transformers.tiktok_shop_transformer import TikTokShopOrderTransformer
+from src.loaders.tiktok_shop_staging_loader import TikTokShopOrderLoader
+from src.extractors.shopee_orders_extractor import ShopeeOrderExtractor
+from src.transformers.shopee_orders_transformer import ShopeeOrderTransformer
+from src.loaders.shopee_orders_loader import ShopeeOrderLoader
+
+# Default arguments
+default_args = {
+    "owner": "data-team",
+    "depends_on_past": False,
+    "start_date": datetime(2025, 10, 1),
+    "email_on_failure": False,
+    "email_on_retry": False,
+    "retries": 1,
+    "retry_delay": timedelta(minutes=5),
+    "catchup": False,
+}
+
+
+def extract_misa_crm_data(**context):
+    """Extracts all data from MISA CRM."""
+    logger = logging.getLogger(__name__)
+    logger.info("Starting MISA CRM extraction...")
+
+    extractor = MISACRMExtractor()
+    endpoints = ["customers", "contacts", "sale_orders", "stocks", "products"]
+    raw_data = {}
+
+    for endpoint in endpoints:
+        logger.info(f"Extracting {endpoint}...")
+        raw_data[endpoint] = extractor.extract_all_data_from_endpoint(endpoint)
+
+    context["ti"].xcom_push(key="misa_crm_raw_data", value=json.dumps(raw_data))
+
+
+def transform_misa_crm_data(**context):
+    """Transforms MISA CRM data."""
+    import gc  # Import gc ở đầu function
+
+    logger = logging.getLogger(__name__)
+    logger.info("Starting MISA CRM transformation...")
+
+    try:
+        raw_data_json = context["ti"].xcom_pull(key="misa_crm_raw_data")
+        raw_data = json.loads(raw_data_json)
+
+        # Heavy memory operation - transform data
+        transformer = MISACRMTransformer()
+
+        # Process with memory management
+        logger.info("Starting data transformation with memory optimization...")
+
+        # Tạo batch_id từ execution date
+        execution_date = context["execution_date"]
+        batch_id = f"misa_crm_full_load_{execution_date.strftime('%Y%m%d_%H%M%S')}"
+
+        transformed_data = transformer.transform_all_endpoints(raw_data, batch_id)
+
+        # Clear raw data from memory immediately after transformation
+        del raw_data
+        del transformer
+
+        gc.collect()
+        logger.info("Post-transformation memory cleanup completed")
+
+        # Serialize dict of DataFrames to JSON for XCom
+        transformed_data_json = {
+            k: v.to_json(orient="split") for k, v in transformed_data.items()
+        }
+        context["ti"].xcom_push(
+            key="misa_crm_transformed_data", value=json.dumps(transformed_data_json)
+        )
+
+        # Final cleanup
+        del transformed_data
+        del transformed_data_json
+        gc.collect()
+
+    except Exception as e:
+        logger.error(f"Transformation failed: {str(e)}")
+        # Emergency cleanup
+        gc.collect()
+        raise
+
+
+def load_misa_crm_data(**context):
+    """Pulls transformed MISA CRM data from XComs and loads it."""
+    logger = logging.getLogger(__name__)
+    logger.info("Loading MISA CRM data...")
+
+    try:
+        transformed_data_json = context["ti"].xcom_pull(
+            key="misa_crm_transformed_data", task_ids="misa_crm_etl.transform"
+        )
+        transformed_data_dict = json.loads(transformed_data_json)
+
+        # Deserialize JSON back to DataFrames
+        transformed_data = {
+            k: pd.read_json(v, orient="split") for k, v in transformed_data_dict.items()
+        }
+
+        loader = MISACRMLoader()
+        loaded_counts = loader.load_all_data_to_staging(
+            transformed_data, truncate_first=True
+        )
+
+        # Log kết quả load
+        total_loaded = sum(loaded_counts.values())
+        logger.info(f"✅ MISA CRM load completed: {total_loaded} total records")
+
+        return f"Successfully loaded {total_loaded} records"
+
+    except Exception as e:
+        logger.error(f"❌ MISA CRM load failed: {str(e)}")
+        raise  # Re-raise để task fail
+
+
+# --- TikTok Shop ETL Functions (REFACTORED TO 3 SEPARATE TASKS) ---
+def extract_tiktok_shop_full_load(**context):
+    """Extract TikTok Shop full load data với ngày cố định"""
+    logger = logging.getLogger(__name__)
+    logger.info("🔄 Starting TikTok Shop Full Load Extraction...")
+
+    try:
+        extractor = TikTokShopOrderExtractor()
+
+        # Sử dụng ngày cố định 1/7/2024 thay vì auto-detect
+        start_date = datetime(2024, 7, 1)
+        logger.info(f"📅 Using fixed start date: {start_date.strftime('%Y-%m-%d')}")
+
+        end_date = datetime.now()
+        start_timestamp = int(start_date.timestamp())
+        end_timestamp = int(end_date.timestamp())
+
+        days_span = (end_date - start_date).days
+        logger.info(
+            f"📅 Processing range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')} ({days_span} days)"
+        )
+
+        # Extract all orders using streaming
+        all_orders = []
+        batch_count = 0
+
+        logger.info("🚀 Starting streaming extraction...")
+        for orders_batch in extractor.stream_orders_lightweight(
+            start_timestamp, end_timestamp, batch_size=20
+        ):
+            batch_count += 1
+            batch_size = len(orders_batch)
+
+            if orders_batch:
+                all_orders.extend(orders_batch)
+                logger.info(
+                    f"📥 Batch {batch_count}: extracted {batch_size} orders (total: {len(all_orders)})"
+                )
+
+            # Memory cleanup every 5 batches
+            if batch_count % 5 == 0:
+                import gc
+
+                gc.collect()
+
+        logger.info(
+            f"✅ Extraction complete: {len(all_orders)} orders from {batch_count} batches"
+        )
+
+        # Push to XCom
+        context["ti"].xcom_push(key="tiktok_shop_raw_data", value=all_orders)
+        context["ti"].xcom_push(
+            key="extraction_metadata",
+            value={
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "total_orders": len(all_orders),
+                "batch_count": batch_count,
+            },
+        )
+
+        return f"Extracted {len(all_orders)} orders"
+
+    except Exception as e:
+        logger.error(f"❌ TikTok Shop extraction failed: {str(e)}")
+        raise
+
+
+def transform_tiktok_shop_full_load(**context):
+    """Transform TikTok Shop full load data"""
+    logger = logging.getLogger(__name__)
+    logger.info("🔄 Starting TikTok Shop Full Load Transformation...")
+
+    try:
+        # Pull raw data from XCom
+        all_orders = context["ti"].xcom_pull(key="tiktok_shop_raw_data")
+
+        if not all_orders:
+            logger.warning("📭 No raw data to transform")
+            return "No data to transform"
+
+        logger.info(f"📊 Transforming {len(all_orders)} orders...")
+
+        # Transform data
+        transformer = TikTokShopOrderTransformer()
+        transformed_df = transformer.transform_orders_to_dataframe(all_orders)
+
+        if transformed_df.empty:
+            logger.warning("📭 No data after transformation")
+            return "No data after transformation"
+
+        logger.info(f"✅ Transformation complete: {len(transformed_df)} records")
+
+        # FIX: Ghi Parquet file thay vì XCom lớn để tránh memory allocation error
+        import os
+
+        output_dir = "/opt/airflow/data/tiktok"
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Dùng run_id để đảm bảo mỗi DAG run chỉ có 1 file duy nhất
+        run_id = context["dag_run"].run_id
+        safe_run_id = run_id.replace(":", "_")
+        file_path = os.path.join(output_dir, f"tiktok_orders_{safe_run_id}.parquet")
+        tmp_path = file_path + ".tmp"
+
+        # Ghi Parquet với compression snappy để giảm kích thước
+        transformed_df.to_parquet(
+            tmp_path, engine="pyarrow", compression="snappy", index=False
+        )
+
+        # Atomic write: ghi vào .tmp rồi rename
+        os.replace(tmp_path, file_path)
+
+        # Push chỉ đường dẫn file thay vì toàn bộ DataFrame
+        context["ti"].xcom_push(key="tiktok_shop_transformed_path", value=file_path)
+
+        # Lưu số records trước khi cleanup
+        record_count = len(transformed_df)
+
+        # Memory cleanup
+        del all_orders
+        del transformed_df
+        import gc
+
+        gc.collect()
+
+        return f"Transformed {record_count} records to Parquet file: {file_path}"
+
+    except Exception as e:
+        logger.error(f"❌ TikTok Shop transformation failed: {str(e)}")
+        raise
+
+
+def load_tiktok_shop_full_load(**context):
+    """Load TikTok Shop full load data to staging"""
+    logger = logging.getLogger(__name__)
+    logger.info("🔄 Starting TikTok Shop Full Load Loading...")
+
+    try:
+        # Pull file path from XCom thay vì JSON data
+        file_path = context["ti"].xcom_pull(key="tiktok_shop_transformed_path")
+
+        if not file_path:
+            logger.warning("📭 No transformed file path to load")
+            return "No data to load"
+
+        # Đọc Parquet file thay vì JSON
+        import pandas as pd
+        import os
+
+        df = pd.read_parquet(file_path, engine="pyarrow")
+
+        logger.info(f"📊 Loading {len(df)} records to staging...")
+
+        # Load data (replace mode for full load)
+        loader = TikTokShopOrderLoader()
+        success = loader.load_orders(df, load_mode="replace")
+
+        if success:
+            logger.info(f"✅ Successfully loaded {len(df)} records to staging")
+
+            # Get load statistics
+            stats = loader.get_load_statistics()
+            logger.info(f"📊 Load statistics: {stats}")
+
+            # Cleanup: xóa file tạm sau khi load xong
+            try:
+                os.remove(file_path)
+                logger.info(f"🗑️ Cleaned up temporary file: {file_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"⚠️ Failed to cleanup file {file_path}: {cleanup_error}")
+
+            return f"Successfully loaded {len(df)} records"
+        else:
+            logger.error(f"❌ Failed to load {len(df)} records")
+            raise Exception(f"Failed to load {len(df)} records to staging")
+
+    except Exception as e:
+        logger.error(f"❌ TikTok Shop loading failed: {str(e)}")
+        raise
+
+
+# ========================
+# SHOPEE ORDERS FUNCTIONS
+# ========================
+
+
+def extract_shopee_orders_full_load(**context):
+    """
+    Extract tất cả dữ liệu Shopee Orders (Full Load)
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("🚀 Starting Shopee Orders Full Load Extraction...")
+
+    try:
+        extractor = ShopeeOrderExtractor()
+
+        # Sử dụng trực tiếp ngày 1/7/2024 vì doanh nghiệp mở từ thời điểm đó
+        start_date = datetime(2024, 7, 1)
+        logger.info(
+            f"📅 Using fixed start date: {start_date.strftime('%Y-%m-%d')} (business started from this date)"
+        )
+
+        end_date = datetime.now()
+        start_timestamp = int(start_date.timestamp())
+        end_timestamp = int(end_date.timestamp())
+
+        days_span = (end_date - start_date).days
+        logger.info(
+            f"📅 Processing range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')} ({days_span} days)"
+        )
+
+        # Extract all orders
+        all_orders = extractor.extract_orders_full_load(start_date, end_date)
+
+        logger.info(f"✅ Extracted {len(all_orders)} orders from Shopee")
+
+        # Push to XCom
+        context["ti"].xcom_push(
+            key="shopee_orders_raw_data", value=json.dumps(all_orders)
+        )
+
+        return f"Successfully extracted {len(all_orders)} orders"
+
+    except Exception as e:
+        logger.error(f"❌ Shopee Orders extraction failed: {str(e)}")
+        raise
+
+
+def transform_shopee_orders_full_load(**context):
+    """
+    Transform dữ liệu Shopee Orders (Full Load) → 12 bảng theo ERD
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("🔄 Starting Shopee Orders Full Load Transformation...")
+
+    try:
+        # Pull data from XCom
+        raw_data_json = context["ti"].xcom_pull(key="shopee_orders_raw_data")
+        if not raw_data_json:
+            logger.warning("No raw data found in XCom")
+            return "No data to transform"
+
+        orders_data = json.loads(raw_data_json)
+
+        if not orders_data:
+            logger.warning("No orders data to transform")
+            return "No orders to transform"
+
+        # Transform data → 12 bảng
+        transformer = ShopeeOrderTransformer()
+        tables_to_dfs = transformer.transform_orders_to_dataframes(orders_data)
+
+        # Serialize từng bảng sang JSON-safe và đẩy XCom
+        serialized = {}
+        total_rows = 0
+        for name, df in tables_to_dfs.items():
+            payload_json = df.to_json(
+                orient="records", date_format="iso", date_unit="s"
+            )
+            serialized[name] = json.loads(payload_json)
+            total_rows += len(df)
+
+        context["ti"].xcom_push(
+            key="shopee_orders_transformed_12_tables", value=json.dumps(serialized)
+        )
+
+        return f"Successfully transformed Shopee full load into 12 tables, total {total_rows} rows"
+
+    except Exception as e:
+        logger.error(f"❌ Shopee Orders transformation failed: {str(e)}")
+        raise
+
+
+def load_shopee_orders_full_load(**context):
+    """
+    Load dữ liệu Shopee Orders vào staging (Full Load) → 12 bảng
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("💾 Starting Shopee Orders Full Load Loading...")
+
+    try:
+        # Pull transformed data (12 bảng) từ XCom
+        transformed_json = context["ti"].xcom_pull(
+            key="shopee_orders_transformed_12_tables"
+        )
+        if not transformed_json:
+            logger.warning("No transformed data found in XCom")
+            return "No data to load"
+
+        transformed_dict = json.loads(transformed_json)
+
+        # Convert lại sang DataFrame
+        import pandas as pd
+
+        tables_to_dfs = {k: pd.DataFrame(v) for k, v in transformed_dict.items()}
+
+        # Load theo thứ tự an toàn
+        loader = ShopeeOrderLoader()
+        success = loader.load_orders_full_load(tables_to_dfs)
+
+        if success:
+            logger.info("✅ Shopee 12 tables loaded successfully")
+            return "Successfully loaded Shopee 12 tables (full load)"
+        else:
+            logger.error("❌ Failed to load Shopee 12 tables")
+            raise Exception("Failed to load Shopee 12 tables")
+
+    except Exception as e:
+        logger.error(f"❌ Shopee Orders loading failed: {str(e)}")
+        raise
+
+
+# --- DAG Definition ---
+with DAG(
+    dag_id="full_load_etl_dag_october_2025",
+    default_args=default_args,
+    description="Full Load ETL cho tháng 10/2025 - Trích xuất dữ liệu từ đầu tháng 10/2025 cho tất cả nền tảng (MISA, TikTok, Shopee)",
+    schedule_interval=None,
+    tags=["etl", "full-load", "october-2025", "test-data"],
+    catchup=False,
+) as dag:
+
+    start_task = BashOperator(
+        task_id="start_full_load",
+        bash_command='echo "🚀 Bắt đầu Full Load ETL cho tháng 10/2025 - Trích xuất dữ liệu từ 01/10/2025..."',
+    )
+
+    with TaskGroup(group_id="misa_crm_etl") as misa_crm_group:
+        extract_task = PythonOperator(
+            task_id="extract",
+            python_callable=extract_misa_crm_data,
+            doc_md="Trích xuất dữ liệu MISA CRM từ 01/10/2025",
+        )
+        transform_task = PythonOperator(
+            task_id="transform",
+            python_callable=transform_misa_crm_data,
+            execution_timeout=timedelta(minutes=30),
+            retries=1,
+            retry_delay=timedelta(minutes=2),
+            doc_md="Chuyển đổi dữ liệu MISA CRM cho tháng 10/2025",
+        )
+        load_task = PythonOperator(
+            task_id="load",
+            python_callable=load_misa_crm_data,
+            doc_md="Tải dữ liệu MISA CRM vào staging database cho tháng 10/2025",
+        )
+        extract_task >> transform_task >> load_task
+
+    with TaskGroup(group_id="tiktok_shop_etl") as tiktok_shop_group:
+        extract_tiktok_task = PythonOperator(
+            task_id="extract",
+            python_callable=extract_tiktok_shop_full_load,
+            execution_timeout=timedelta(hours=2),
+            doc_md="Trích xuất dữ liệu TikTok Shop từ 01/10/2025",
+        )
+        transform_tiktok_task = PythonOperator(
+            task_id="transform",
+            python_callable=transform_tiktok_shop_full_load,
+            execution_timeout=timedelta(minutes=30),
+            doc_md="Chuyển đổi dữ liệu TikTok Shop cho tháng 10/2025",
+        )
+        load_tiktok_task = PythonOperator(
+            task_id="load",
+            python_callable=load_tiktok_shop_full_load,
+            execution_timeout=timedelta(hours=2),  # Tăng từ 30 phút lên 2 giờ
+            doc_md="Tải dữ liệu TikTok Shop vào staging database cho tháng 10/2025",
+        )
+        extract_tiktok_task >> transform_tiktok_task >> load_tiktok_task
+
+    with TaskGroup(group_id="shopee_orders_etl") as shopee_orders_group:
+        extract_shopee_task = PythonOperator(
+            task_id="extract",
+            python_callable=extract_shopee_orders_full_load,
+            execution_timeout=timedelta(hours=2),
+            doc_md="Trích xuất dữ liệu Shopee từ 01/10/2025",
+        )
+        transform_shopee_task = PythonOperator(
+            task_id="transform",
+            python_callable=transform_shopee_orders_full_load,
+            execution_timeout=timedelta(minutes=30),
+            doc_md="Chuyển đổi dữ liệu Shopee cho tháng 10/2025",
+        )
+        load_shopee_task = PythonOperator(
+            task_id="load",
+            python_callable=load_shopee_orders_full_load,
+            execution_timeout=timedelta(minutes=30),
+            doc_md="Tải dữ liệu Shopee vào staging database cho tháng 10/2025",
+        )
+        extract_shopee_task >> transform_shopee_task >> load_shopee_task
+
+    end_task = BashOperator(
+        task_id="end_full_load",
+        bash_command='echo "✅ Full Load tháng 10/2025 hoàn thành: Shopee trước, sau đó MISA + TikTok song song."',
+    )
+
+    # Execution order: Shopee first, then run MISA and TikTok in parallel
+    start_task >> shopee_orders_group >> [misa_crm_group, tiktok_shop_group] >> end_task

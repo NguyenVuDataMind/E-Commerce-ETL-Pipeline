@@ -581,7 +581,7 @@ class MISACRMLoader:
             "contacts": "ISNULL(target.modified_date, '1900-01-01') < ISNULL(source.modified_date, '1900-01-01')",
             "stocks": "ISNULL(target.modified_date, '1900-01-01') < ISNULL(source.modified_date, '1900-01-01')",
             "products": "ISNULL(target.modified_date, '1900-01-01') < ISNULL(source.modified_date, '1900-01-01')",
-            # sale_orders_flattened chưa có modified_date trong schema → tạm thời không áp guard thời gian
+            "sale_orders_flattened": "ISNULL(target.order_modified_date, '1900-01-01') < ISNULL(source.order_modified_date, '1900-01-01')",
         }
         return conditions.get(endpoint)
 
