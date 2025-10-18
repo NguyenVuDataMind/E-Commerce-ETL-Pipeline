@@ -468,7 +468,7 @@ jobs:
           echo 'Verifying SQL Server schema...'
           docker compose exec -T sqlserver /opt/mssql-tools18/bin/sqlcmd \
             -S localhost -U sa -P "${SQL_SERVER_PASSWORD}" \
-            -Q "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tiktok_shop_order_detail' AND COLUMN_NAME IN ('create_time', 'update_time', 'paid_time') ORDER BY COLUMN_NAME;" \
+            -Q "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tiktok_shop_order_detail' AND COLUMN_NAME IN (\"create_time\", \"update_time\", \"paid_time\") ORDER BY COLUMN_NAME;" \
             -C -N || echo 'Không thể verify schema'
           
           # Check logs for any errors
