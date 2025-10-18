@@ -94,13 +94,13 @@ jobs:
         # Test DAG validation
         try:
             # Test full_load_etl_dag
-            with open('dags/full_load_etl_dag.py', 'r', encoding='utf-8') as f:
+            with open("dags/full_load_etl_dag.py", "r", encoding="utf-8") as f:
                 dag_code = f.read()
             exec(dag_code)
             print('✅ full_load_etl_dag validation thành công')
             
             # Test incremental_etl_dag  
-            with open('dags/incremental_etl_dag.py', 'r', encoding='utf-8') as f:
+            with open("dags/incremental_etl_dag.py", "r", encoding="utf-8") as f:
                 dag_code = f.read()
             exec(dag_code)
             print('✅ incremental_etl_dag validation thành công')
@@ -194,8 +194,8 @@ jobs:
             
             # Tạo sample data để test
             sample_data = {
-                'customers': [{'id': 1, 'name': 'Test Customer', 'email': 'test@example.com'}],
-                'contacts': [{'id': 1, 'customer_id': 1, 'phone': '0123456789'}]
+                "customers": [{"id": 1, "name": "Test Customer", "email": "test@example.com"}],
+                "contacts": [{"id": 1, "customer_id": 1, "phone": "0123456789"}]
             }
             
             try:
@@ -215,10 +215,10 @@ jobs:
             
             # Tạo sample order data
             sample_orders = [{
-                'order_id': 'test_123',
-                'order_status': 'COMPLETED',
-                'create_time': 1640995200,
-                'total_amount': 100000
+                "order_id": "test_123",
+                "order_status": "COMPLETED",
+                "create_time": 1640995200,
+                "total_amount": 100000
             }]
             
             try:
@@ -263,9 +263,9 @@ jobs:
             # Test signature generation
             try:
                 test_params = {
-                    'app_key': 'test_key',
-                    'timestamp': '1234567890',
-                    'shop_cipher': 'test_cipher'
+                    "app_key": "test_key",
+                    "timestamp": "1234567890",
+                    "shop_cipher": "test_cipher"
                 }
                 signature = authenticator.generate_signature('/test/endpoint', test_params)
                 if signature:
@@ -467,8 +467,8 @@ jobs:
           # Verify SQL Server schema đã được cập nhật
           echo 'Verifying SQL Server schema...'
           docker compose exec -T sqlserver /opt/mssql-tools18/bin/sqlcmd \
-            -S localhost -U sa -P "${SQL_SERVER_PASSWORD}" \
-            -Q "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tiktok_shop_order_detail' AND COLUMN_NAME IN (\"create_time\", \"update_time\", \"paid_time\") ORDER BY COLUMN_NAME;" \
+            -S localhost -U sa -P \"${SQL_SERVER_PASSWORD}\" \
+            -Q \"SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tiktok_shop_order_detail' AND COLUMN_NAME IN ('create_time', 'update_time', 'paid_time') ORDER BY COLUMN_NAME;\" \
             -C -N || echo 'Không thể verify schema'
           
           # Check logs for any errors
