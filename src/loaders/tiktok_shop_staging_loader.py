@@ -98,8 +98,8 @@ class TikTokShopOrderLoader:
             df_prepared = self._prepare_dataframe_for_load(df)
 
             # Handle different load modes
-            if load_mode == "truncate_insert":
-                # Truncate table first, then insert
+            if load_mode == "truncate_insert" or load_mode == "replace":
+                # Truncate table first, then insert (tránh pandas.to_sql if_exists="replace")
                 if not self.db.truncate_table(self.staging_table, self.staging_schema):
                     logger.error("Failed to truncate staging table")
                     return False
@@ -132,9 +132,7 @@ class TikTokShopOrderLoader:
 
                     logger.info(f"Batch {batch_num} loaded successfully")
 
-                    # Set subsequent batches to append mode
-                    if load_mode == "replace":
-                        load_mode = "append"
+                    # Set subsequent batches to append mode (đã xử lý ở trên)
 
                     # Memory cleanup
                     del batch_df
@@ -573,31 +571,48 @@ class TikTokShopOrderLoader:
 
     def _prepare_dataframe_for_load(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Prepare DataFrame for database loading
+        Prepare DataFrame for database loading (Full Load)
+        Convert UTC datetime to +07-naive datetime (thống nhất với incremental load)
 
         Args:
-            df: Original DataFrame
+            df: Original DataFrame with UTC datetime columns
 
         Returns:
-            Prepared DataFrame
+            Prepared DataFrame with +07-naive datetime columns
         """
         try:
             df_prepared = df.copy()
 
-            # Ensure proper data types
-            # Convert timestamp columns
-            timestamp_columns = [
+            # Convert UTC datetime columns to +07-naive (thống nhất với incremental load)
+            datetime_columns = [
                 "create_time",
                 "update_time",
-                "delivery_time",
-                "collection_time",
+                "paid_time",
+                "rts_time",
+                "shipping_due_time",
                 "delivery_due_time",
+                "collection_due_time",
+                "cancel_order_sla_time",
+                "recommended_shipping_time",
+                "rts_sla_time",
+                "tts_sla_time",
+                "delivery_sla_time",
+                "collection_sla_time",
+                "item_rts_time",
+                "item_shipped_time",
+                "item_delivered_time",
             ]
 
-            for col in timestamp_columns:
-                if col in df_prepared.columns:
-                    # TikTok timestamps are in seconds, convert to proper datetime if needed
-                    pass  # Keep as integer for now, can convert later if needed
+            for col in datetime_columns:
+                if col in df_prepared.columns and pd.api.types.is_datetime64_any_dtype(
+                    df_prepared[col]
+                ):
+                    # Convert UTC datetime to +07-naive (như incremental load)
+                    df_prepared[col] = (
+                        df_prepared[col]
+                        .dt.tz_convert("Asia/Ho_Chi_Minh")
+                        .dt.tz_localize(None)
+                    )
 
             # Ensure string columns are not too long (tăng kích thước để phù hợp với database schema)
             string_columns = {
