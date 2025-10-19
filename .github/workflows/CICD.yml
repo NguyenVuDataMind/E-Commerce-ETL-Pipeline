@@ -89,18 +89,20 @@ jobs:
         python -c "
         import sys
         import os
-        sys.path.append('/opt/airflow/')
+        
+        # Sửa đường dẫn cho GitHub Actions
+        sys.path.append('.')
         
         # Test DAG validation
         try:
             # Test full_load_etl_dag
-            with open("dags/full_load_etl_dag.py", "r", encoding="utf-8") as f:
+            with open('dags/full_load_etl_dag.py', 'r', encoding='utf-8') as f:
                 dag_code = f.read()
             exec(dag_code)
             print('✅ full_load_etl_dag validation thành công')
             
             # Test incremental_etl_dag  
-            with open("dags/incremental_etl_dag.py", "r", encoding="utf-8") as f:
+            with open('dags/incremental_etl_dag.py', 'r', encoding='utf-8') as f:
                 dag_code = f.read()
             exec(dag_code)
             print('✅ incremental_etl_dag validation thành công')
