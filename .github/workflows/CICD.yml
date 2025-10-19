@@ -64,7 +64,9 @@ jobs:
         python -c "
         import sys
         import os
-        sys.path.append('/opt/airflow/')
+        
+        # Sửa đường dẫn cho GitHub Actions
+        sys.path.append('.')
         
         # Test import các modules
         try:
@@ -185,7 +187,9 @@ jobs:
         import sys
         import os
         import pandas as pd
-        sys.path.append('/opt/airflow/')
+        
+        # Sửa đường dẫn cho GitHub Actions
+        sys.path.append('.')
         
         try:
             # Test MISA CRM transformer với sample data
@@ -194,10 +198,10 @@ jobs:
             
             transformer = MISACRMTransformer()
             
-            # Tạo sample data để test
+            # Tạo sample data để test - sửa syntax
             sample_data = {
-                "customers": [{"id": 1, "name": "Test Customer", "email": "test@example.com"}],
-                "contacts": [{"id": 1, "customer_id": 1, "phone": "0123456789"}]
+                'customers': [{'id': 1, 'name': 'Test Customer', 'email': 'test@example.com'}],
+                'contacts': [{'id': 1, 'customer_id': 1, 'phone': '0123456789'}]
             }
             
             try:
@@ -215,12 +219,12 @@ jobs:
             
             tiktok_transformer = TikTokShopOrderTransformer()
             
-            # Tạo sample order data
+            # Tạo sample order data - sửa syntax
             sample_orders = [{
-                "order_id": "test_123",
-                "order_status": "COMPLETED",
-                "create_time": 1640995200,
-                "total_amount": 100000
+                'order_id': 'test_123',
+                'order_status': 'COMPLETED',
+                'create_time': 1640995200,
+                'total_amount': 100000
             }]
             
             try:
@@ -245,7 +249,9 @@ jobs:
         python -c "
         import sys
         import os
-        sys.path.append('/opt/airflow/')
+        
+        # Sửa đường dẫn cho GitHub Actions
+        sys.path.append('.')
         
         try:
             # Test TikTok Shop authenticator
@@ -265,9 +271,9 @@ jobs:
             # Test signature generation
             try:
                 test_params = {
-                    "app_key": "test_key",
-                    "timestamp": "1234567890",
-                    "shop_cipher": "test_cipher"
+                    'app_key': 'test_key',
+                    'timestamp': '1234567890',
+                    'shop_cipher': 'test_cipher'
                 }
                 signature = authenticator.generate_signature('/test/endpoint', test_params)
                 if signature:
@@ -312,6 +318,8 @@ jobs:
         echo "Testing Docker image..."
         docker run --rm facolos-etl-pipeline:latest python -c "
         import sys
+        
+        # Sửa đường dẫn cho Docker container
         sys.path.append('/opt/airflow/')
         print('✅ Docker image test thành công')
         "
