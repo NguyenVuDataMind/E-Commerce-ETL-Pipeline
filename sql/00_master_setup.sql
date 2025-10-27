@@ -570,17 +570,8 @@ CREATE TABLE staging.tiktok_shop_order_detail (
     tracking_number NVARCHAR(200),
     is_buyer_request_cancel BIT,
     cancel_reason NVARCHAR(MAX),
-    cancel_user NVARCHAR(100),
-    buyer_uid NVARCHAR(100),
     split_or_combine_tag NVARCHAR(100),
-    seller_note NVARCHAR(MAX),
-    delivery_option NVARCHAR(200),
-    delivery_due_time DATETIME2,
     rts_time DATETIME2,
-    delivery_sla_time DATETIME2,
-    collection_sla_time DATETIME2,
-    order_line_id NVARCHAR(100),
-    cpf NVARCHAR(100),
     payment_currency NVARCHAR(10),
     payment_original_shipping_fee DECIMAL(18,4),
     payment_original_total_product_price DECIMAL(18,4),
@@ -630,18 +621,9 @@ CREATE TABLE staging.tiktok_shop_order_detail (
     item_shipping_provider_name NVARCHAR(200),
     item_tracking_number NVARCHAR(200),
     item_cancel_reason NVARCHAR(MAX),
-    item_cancel_user NVARCHAR(100),
-    item_is_buyer_request_cancel BIT,
     item_rts_time DATETIME2,
-    item_shipped_time DATETIME2,
-    item_delivered_time DATETIME2,
     item_sku_attributes NVARCHAR(MAX),
     package_id NVARCHAR(100),
-    package_status NVARCHAR(100),
-    package_shipping_provider_id NVARCHAR(100),
-    package_shipping_provider_name NVARCHAR(200),
-    package_tracking_number NVARCHAR(200),
-    shop_cipher NVARCHAR(200),
     payment_info_json NVARCHAR(MAX),
     recipient_address_json NVARCHAR(MAX),
     line_items_json NVARCHAR(MAX),
@@ -662,12 +644,6 @@ PRINT 'Step 6: Creating Shopee orders tables...';
 GO
 
 -- Drop children first, then parents (to avoid FK constraint errors)
-IF OBJECT_ID('staging.shopee_buyer_proof_of_collection', 'U') IS NOT NULL DROP TABLE staging.shopee_buyer_proof_of_collection;
-IF OBJECT_ID('staging.shopee_prescription_images', 'U') IS NOT NULL DROP TABLE staging.shopee_prescription_images;
-IF OBJECT_ID('staging.shopee_order_warnings', 'U') IS NOT NULL DROP TABLE staging.shopee_order_warnings;
-IF OBJECT_ID('staging.shopee_order_pending_terms', 'U') IS NOT NULL DROP TABLE staging.shopee_order_pending_terms;
-IF OBJECT_ID('staging.shopee_payment_info', 'U') IS NOT NULL DROP TABLE staging.shopee_payment_info;
-IF OBJECT_ID('staging.shopee_invoice', 'U') IS NOT NULL DROP TABLE staging.shopee_invoice;
 IF OBJECT_ID('staging.shopee_package_items', 'U') IS NOT NULL DROP TABLE staging.shopee_package_items;
 IF OBJECT_ID('staging.shopee_order_item_locations', 'U') IS NOT NULL DROP TABLE staging.shopee_order_item_locations;
 IF OBJECT_ID('staging.shopee_order_items', 'U') IS NOT NULL DROP TABLE staging.shopee_order_items;
@@ -711,16 +687,13 @@ CREATE TABLE staging.shopee_orders (
     pickup_done_time DATETIME2,
     reverse_shipping_fee DECIMAL(18,4),
     order_chargeable_weight_gram INT,
-    prescription_check_status INT,
-    pharmacist_name NVARCHAR(100),
-    prescription_approval_time DATETIME2,
-    prescription_rejection_time DATETIME2,
     edt_from DATETIME2,
     edt_to DATETIME2,
     booking_sn NVARCHAR(50),
     advance_package BIT,
     return_request_due_date DATETIME2,
     is_buyer_shop_collection BIT,
+    hot_listing_order BIT DEFAULT 0,
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
     etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
@@ -742,8 +715,6 @@ CREATE TABLE staging.shopee_recipient_address (
     region NVARCHAR(100),
     zipcode NVARCHAR(20),
     full_address NVARCHAR(MAX),
-    latitude DECIMAL(10,6),
-    longitude DECIMAL(10,6),
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
     etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
@@ -779,6 +750,7 @@ CREATE TABLE staging.shopee_order_items (
     is_b2c_owned_item BIT,
     consultation_id NVARCHAR(100),
     image_url NVARCHAR(MAX),
+    hot_listing_item BIT DEFAULT 0,
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
     etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
@@ -817,8 +789,6 @@ CREATE TABLE staging.shopee_packages (
     allow_self_design_awb BIT,
     parcel_chargeable_weight_gram INT,
     group_shipment_id BIGINT,
-    virtual_contact_number NVARCHAR(50),
-    package_query_number NVARCHAR(100),
     sorting_group NVARCHAR(100),
     source_request_id NVARCHAR(100),
     ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
@@ -854,103 +824,6 @@ CREATE TABLE staging.shopee_package_items (
 );
 GO
 
--- Create invoice table
-CREATE TABLE staging.shopee_invoice (
-    order_sn NVARCHAR(50) PRIMARY KEY,
-    number NVARCHAR(100),
-    series_number NVARCHAR(100),
-    access_key NVARCHAR(200),
-    issue_date DATETIME2,
-    total_value DECIMAL(18,4),
-    products_total_value DECIMAL(18,4),
-    tax_code NVARCHAR(50),
-    source_request_id NVARCHAR(100),
-    ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_batch_id NVARCHAR(50),
-    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
-    FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
-);
-GO
-
--- Create payment_info table
-CREATE TABLE staging.shopee_payment_info (
-    order_sn NVARCHAR(50) NOT NULL,
-    transaction_id NVARCHAR(100) NOT NULL,
-    payment_method NVARCHAR(100),
-    payment_processor_register NVARCHAR(100),
-    card_brand NVARCHAR(50),
-    source_request_id NVARCHAR(100),
-    ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_batch_id NVARCHAR(50),
-    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
-    PRIMARY KEY (order_sn, transaction_id),
-    FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
-);
-GO
-
--- Create order_pending_terms table
-CREATE TABLE staging.shopee_order_pending_terms (
-    order_sn NVARCHAR(50) NOT NULL,
-    term NVARCHAR(400) NOT NULL,
-    source_request_id NVARCHAR(100),
-    ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_batch_id NVARCHAR(50),
-    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
-    PRIMARY KEY (order_sn, term),
-    FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
-);
-GO
-
--- Create order_warnings table
-CREATE TABLE staging.shopee_order_warnings (
-    order_sn NVARCHAR(50) NOT NULL,
-    warning NVARCHAR(400) NOT NULL,
-    source_request_id NVARCHAR(100),
-    ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_batch_id NVARCHAR(50),
-    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
-    PRIMARY KEY (order_sn, warning),
-    FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
-);
-GO
-
--- Create prescription_images table
-CREATE TABLE staging.shopee_prescription_images (
-    order_sn NVARCHAR(50) NOT NULL,
-    image_url NVARCHAR(400) NOT NULL,
-    source_request_id NVARCHAR(100),
-    ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_batch_id NVARCHAR(50),
-    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
-    PRIMARY KEY (order_sn, image_url),
-    FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
-);
-GO
-
--- Create buyer_proof_of_collection table
-CREATE TABLE staging.shopee_buyer_proof_of_collection (
-    order_sn NVARCHAR(50) NOT NULL,
-    image_url NVARCHAR(400) NOT NULL,
-    source_request_id NVARCHAR(100),
-    ingested_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_created_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_updated_at DATETIME2 DEFAULT DATEADD(HOUR, 7, GETUTCDATE()),
-    etl_batch_id NVARCHAR(50),
-    etl_source NVARCHAR(50) DEFAULT 'shopee_api',
-    PRIMARY KEY (order_sn, image_url),
-    FOREIGN KEY (order_sn) REFERENCES staging.shopee_orders(order_sn) ON DELETE CASCADE
-);
-GO
 
 -- Create indexes for Shopee tables
 CREATE INDEX IX_shopee_orders_update_time ON staging.shopee_orders(update_time);
@@ -964,16 +837,12 @@ CREATE INDEX IX_shopee_order_items_model_id ON staging.shopee_order_items(model_
 CREATE INDEX IX_shopee_packages_logistics_status ON staging.shopee_packages(logistics_status);
 CREATE INDEX IX_shopee_packages_shipping_carrier ON staging.shopee_packages(shipping_carrier);
 
-CREATE INDEX IX_shopee_payment_info_transaction_id ON staging.shopee_payment_info(transaction_id);
-
 -- Create ETL indexes for Shopee tables (similar to TikTok Shop)
 CREATE INDEX IX_shopee_orders_etl_updated ON staging.shopee_orders(etl_updated_at);
 CREATE INDEX IX_shopee_orders_etl_batch ON staging.shopee_orders(etl_batch_id);
 CREATE INDEX IX_shopee_recipient_address_etl_updated ON staging.shopee_recipient_address(etl_updated_at);
 CREATE INDEX IX_shopee_order_items_etl_updated ON staging.shopee_order_items(etl_updated_at);
 CREATE INDEX IX_shopee_packages_etl_updated ON staging.shopee_packages(etl_updated_at);
-CREATE INDEX IX_shopee_invoice_etl_updated ON staging.shopee_invoice(etl_updated_at);
-CREATE INDEX IX_shopee_payment_info_etl_updated ON staging.shopee_payment_info(etl_updated_at);
 GO
 
 PRINT 'Shopee orders tables created successfully!';

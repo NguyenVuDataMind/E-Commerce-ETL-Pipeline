@@ -212,29 +212,33 @@ class TikTokShopOrderLoader:
                 "paid_time",
                 "rts_time",
                 "shipping_due_time",
-                "delivery_due_time",
                 "collection_due_time",
                 "cancel_order_sla_time",
-                "recommended_shipping_time",  # thường là mili-giây
+                # recommended_shipping_time đã được transformer xử lý thành UTC datetime rồi
                 "rts_sla_time",
                 "tts_sla_time",
-                "delivery_sla_time",
-                "collection_sla_time",
                 # item-level
                 "item_rts_time",
-                "item_shipped_time",
-                "item_delivered_time",
             ]
 
             for col in epoch_cols:
                 if col in prepared.columns:
-                    s = pd.to_numeric(prepared[col], errors="coerce")
-                    # Nếu giá trị ms (>=1e12) -> quy về giây
-                    s = s.where(s.isna() | (s < 10**12), (s // 1000))
-                    # Convert về datetime +07-naive (DATETIME2)
-                    dt = pd.to_datetime(s, unit="s", utc=True, errors="coerce")
-                    dt = dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
-                    prepared[col] = dt.where(pd.notna(dt), None)
+                    # FIX: Kiểm tra xem cột đã là datetime chưa
+                    if pd.api.types.is_datetime64_any_dtype(prepared[col]):
+                        # Cột đã là datetime (từ transformer) → chỉ cần convert timezone
+                        dt = prepared[col]
+                        # Convert UTC → +07-naive (DATETIME2)
+                        dt = dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
+                        prepared[col] = dt
+                    else:
+                        # Cột là epoch integer → convert như cũ
+                        s = pd.to_numeric(prepared[col], errors="coerce")
+                        # Nếu giá trị ms (>=1e12) -> quy về giây
+                        s = s.where(s.isna() | (s < 10**12), (s // 1000))
+                        # Convert về datetime +07-naive (DATETIME2)
+                        dt = pd.to_datetime(s, unit="s", utc=True, errors="coerce")
+                        dt = dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
+                        prepared[col] = dt.where(pd.notna(dt), None)
 
             # 2) Chuẩn hóa nhóm tiền/tổng (DECIMAL(18,2) phía DB)
             money_cols = [
@@ -590,17 +594,12 @@ class TikTokShopOrderLoader:
                 "paid_time",
                 "rts_time",
                 "shipping_due_time",
-                "delivery_due_time",
                 "collection_due_time",
                 "cancel_order_sla_time",
                 "recommended_shipping_time",
                 "rts_sla_time",
                 "tts_sla_time",
-                "delivery_sla_time",
-                "collection_sla_time",
                 "item_rts_time",
-                "item_shipped_time",
-                "item_delivered_time",
             ]
 
             for col in datetime_columns:
@@ -635,7 +634,6 @@ class TikTokShopOrderLoader:
                 "user_id": 50,
                 "request_id": 100,
                 "shop_id": 50,
-                "shop_cipher": 100,
                 "delivery_option_id": 50,
                 "delivery_option_name": 100,
                 "delivery_type": 50,
@@ -644,12 +642,7 @@ class TikTokShopOrderLoader:
                 "shipping_provider_id": 50,
                 "shipping_type": 50,
                 "tracking_number": 100,
-                "cancel_user": 50,
-                "buyer_uid": 50,
                 "split_or_combine_tag": 50,
-                "delivery_option": 100,
-                "order_line_id": 50,
-                "cpf": 50,
                 "recipient_first_name": 100,
                 "recipient_first_name_local_script": 100,
                 "recipient_last_name": 100,
@@ -659,16 +652,11 @@ class TikTokShopOrderLoader:
                 "recipient_postal_code": 20,
                 "recipient_region_code": 20,
                 "package_id": 50,
-                "package_status": 50,
-                "package_shipping_provider_id": 50,
-                "package_shipping_provider_name": 100,
-                "package_tracking_number": 100,
                 "item_package_id": 50,
                 "item_package_status": 50,
                 "item_shipping_provider_id": 50,
                 "item_shipping_provider_name": 100,
                 "item_tracking_number": 100,
-                "item_cancel_user": 50,
                 "etl_batch_id": 50,
                 "etl_source": 50,
             }

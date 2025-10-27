@@ -198,7 +198,7 @@ class TikTokShopOrderTransformer:
             "is_sample_order": self._safe_bool(order.get("is_sample_order")),
             "order_type": self._safe_string(order.get("order_type"), 100),
             "paid_time": self._safe_timestamp_utc(order.get("paid_time")),
-            "recommended_shipping_time": self._safe_timestamp_utc(
+            "recommended_shipping_time": self._safe_timestamp_utc_milliseconds(
                 order.get("recommended_shipping_time")
             ),
             "rts_sla_time": self._safe_timestamp_utc(order.get("rts_sla_time")),
@@ -216,25 +216,10 @@ class TikTokShopOrderTransformer:
                 order.get("is_buyer_request_cancel")
             ),
             "cancel_reason": order.get("cancel_reason"),
-            "cancel_user": self._safe_string(order.get("cancel_user"), 100),
-            "buyer_uid": self._safe_string(order.get("buyer_uid"), 100),
             "split_or_combine_tag": self._safe_string(
                 order.get("split_or_combine_tag"), 100
             ),
-            "seller_note": order.get("seller_note"),
-            "delivery_option": self._safe_string(order.get("delivery_option"), 200),
-            "delivery_due_time": self._safe_timestamp_utc(
-                order.get("delivery_due_time")
-            ),
             "rts_time": self._safe_timestamp_utc(order.get("rts_time")),
-            "delivery_sla_time": self._safe_timestamp_utc(
-                order.get("delivery_sla_time")
-            ),
-            "collection_sla_time": self._safe_timestamp_utc(
-                order.get("collection_sla_time")
-            ),
-            "order_line_id": self._safe_string(order.get("order_line_id"), 100),
-            "cpf": self._safe_string(order.get("cpf"), 100),
             # FIXED: Payment Info - Map từ 'payment' object theo JSON structure thực tế
             "payment_currency": self._safe_string(payment_info.get("currency"), 10),
             "payment_original_shipping_fee": self._safe_decimal(
@@ -268,18 +253,7 @@ class TikTokShopOrderTransformer:
             ),
             # Package Info - Lấy từ package đầu tiên (chỉ có 'id' theo JSON structure)
             "package_id": self._safe_string(package.get("id"), 100),
-            "package_status": self._safe_string(package.get("status"), 100),
-            "package_shipping_provider_id": self._safe_string(
-                package.get("shipping_provider_id"), 100
-            ),
-            "package_shipping_provider_name": self._safe_string(
-                package.get("shipping_provider_name"), 200
-            ),
-            "package_tracking_number": self._safe_string(
-                package.get("tracking_number"), 200
-            ),
             # JSON Fields
-            "shop_cipher": order.get("shop_cipher"),
             "payment_info_json": payment_info_json,
             "line_items_json": json.dumps(order.get("line_items", [])),
             "packages_json": packages_json,
@@ -355,13 +329,7 @@ class TikTokShopOrderTransformer:
             "item_shipping_provider_name": item.get("shipping_provider_name"),
             "item_tracking_number": item.get("tracking_number"),
             "item_cancel_reason": item.get("cancel_reason"),
-            "item_cancel_user": item.get("cancel_user"),
-            "item_is_buyer_request_cancel": self._safe_bool(
-                item.get("is_buyer_request_cancel")
-            ),
             "item_rts_time": self._safe_timestamp_utc(item.get("rts_time")),
-            "item_shipped_time": self._safe_timestamp_utc(item.get("shipped_time")),
-            "item_delivered_time": self._safe_timestamp_utc(item.get("delivered_time")),
             # FIXED: Sử dụng generic JSON field thay vì sales_attributes
             "item_sku_attributes": (
                 json.dumps(item) if item else None
@@ -393,11 +361,7 @@ class TikTokShopOrderTransformer:
             "item_shipping_provider_name": None,
             "item_tracking_number": None,
             "item_cancel_reason": None,
-            "item_cancel_user": None,
-            "item_is_buyer_request_cancel": None,
             "item_rts_time": None,
-            "item_shipped_time": None,
-            "item_delivered_time": None,
             "item_sku_attributes": None,
         }
 
@@ -447,6 +411,27 @@ class TikTokShopOrderTransformer:
                 epoch_seconds = int(float(str(value)))
 
             # Convert to UTC datetime (như Shopee)
+            return pd.to_datetime(epoch_seconds, unit="s", utc=True)
+        except (ValueError, TypeError, AttributeError):
+            return None
+
+    def _safe_timestamp_utc_milliseconds(self, value: Any) -> Optional[datetime]:
+        """Safely convert millisecond timestamp to UTC datetime (dành cho recommended_shipping_time)"""
+        if value is None or value == "":
+            return None
+        try:
+            # Handle pandas Timestamp objects
+            if hasattr(value, "timestamp"):
+                epoch_seconds = int(value.timestamp())
+            else:
+                # Handle regular int/float values
+                epoch_seconds = int(float(str(value)))
+
+            # Convert milliseconds to seconds (nếu > 10 digits thì là milliseconds)
+            if epoch_seconds > 1e10:  # If > 10 digits, it's milliseconds
+                epoch_seconds = epoch_seconds // 1000
+
+            # Convert to UTC datetime (giống các field khác)
             return pd.to_datetime(epoch_seconds, unit="s", utc=True)
         except (ValueError, TypeError, AttributeError):
             return None

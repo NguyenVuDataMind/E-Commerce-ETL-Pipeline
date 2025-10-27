@@ -419,12 +419,6 @@ def load_shopee_orders_incremental(**context):
             "order_item_locations",
             "packages",
             "package_items",
-            "invoice",
-            "payment_info",
-            "order_pending_terms",
-            "order_warnings",
-            "prescription_images",
-            "buyer_proof_of_collection",
         ]
 
         total_loaded = 0

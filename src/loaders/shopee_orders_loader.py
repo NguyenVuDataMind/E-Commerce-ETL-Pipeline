@@ -47,22 +47,6 @@ class ShopeeOrderLoader:
             "package_items": settings.get_table_full_name(
                 "shopee", "shopee_package_items"
             ),
-            "invoice": settings.get_table_full_name("shopee", "shopee_invoice"),
-            "payment_info": settings.get_table_full_name(
-                "shopee", "shopee_payment_info"
-            ),
-            "order_pending_terms": settings.get_table_full_name(
-                "shopee", "shopee_order_pending_terms"
-            ),
-            "order_warnings": settings.get_table_full_name(
-                "shopee", "shopee_order_warnings"
-            ),
-            "prescription_images": settings.get_table_full_name(
-                "shopee", "shopee_prescription_images"
-            ),
-            "buyer_proof_of_collection": settings.get_table_full_name(
-                "shopee", "shopee_buyer_proof_of_collection"
-            ),
         }
 
         logger.info(f"Khởi tạo Shopee Order Loader cho {settings.company_name}")
@@ -121,8 +105,6 @@ class ShopeeOrderLoader:
             "edt_from",
             "edt_to",
             "return_request_due_date",
-            "prescription_approval_time",
-            "prescription_rejection_time",
         ]
 
         for col in datetime_cols:
@@ -225,12 +207,6 @@ class ShopeeOrderLoader:
             "shopee_package_items",
             "shopee_order_item_locations",
             "shopee_packages",
-            "shopee_invoice",
-            "shopee_payment_info",
-            "shopee_order_pending_terms",
-            "shopee_order_warnings",
-            "shopee_prescription_images",
-            "shopee_buyer_proof_of_collection",
             "shopee_order_items",
             "shopee_recipient_address",
         ]
@@ -392,12 +368,6 @@ class ShopeeOrderLoader:
                 "order_item_locations",
                 "packages",
                 "package_items",
-                "invoice",
-                "payment_info",
-                "order_pending_terms",
-                "order_warnings",
-                "prescription_images",
-                "buyer_proof_of_collection",
             ]
 
             success_count = 0

@@ -116,12 +116,6 @@ class ShopeeOrderTransformer:
             "order_item_locations": [],
             "packages": [],
             "package_items": [],
-            "invoice": [],
-            "payment_info": [],
-            "order_pending_terms": [],
-            "order_warnings": [],
-            "prescription_images": [],
-            "buyer_proof_of_collection": [],
         }
 
         for order in orders_list:
@@ -168,14 +162,7 @@ class ShopeeOrderTransformer:
             order, dataframes["packages"], dataframes["package_items"]
         )
 
-        # 5. Invoice table
-        self._process_invoice(order, dataframes["invoice"])
-
-        # 6. Payment info table
-        self._process_payment_info(order, dataframes["payment_info"])
-
-        # 7. Array tables (pending_terms, warnings, etc.)
-        self._process_array_tables(order, dataframes)
+        # 5. Array tables (pending_terms, warnings, etc.) - REMOVED: không có trong API
 
     def _process_orders_table(self, order: Dict[str, Any], orders_list: List):
         """Xử lý bảng orders (bảng chính)"""
@@ -220,16 +207,6 @@ class ShopeeOrderTransformer:
             "order_chargeable_weight_gram": self._safe_int(
                 order.get("order_chargeable_weight_gram")
             ),
-            "prescription_check_status": self._safe_int(
-                order.get("prescription_check_status")
-            ),
-            "pharmacist_name": order.get("pharmacist_name"),
-            "prescription_approval_time": self._unix_to_datetime(
-                order.get("prescription_approval_time")
-            ),
-            "prescription_rejection_time": self._unix_to_datetime(
-                order.get("prescription_rejection_time")
-            ),
             "edt_from": self._unix_to_datetime(order.get("edt_from")),
             "edt_to": self._unix_to_datetime(order.get("edt_to")),
             "booking_sn": order.get("booking_sn"),
@@ -240,6 +217,7 @@ class ShopeeOrderTransformer:
             "is_buyer_shop_collection": self._safe_bool(
                 order.get("is_buyer_shop_collection")
             ),
+            "hot_listing_order": self._safe_bool(order.get("hot_listing_order")),
         }
         orders_list.append(order_data)
 
@@ -261,20 +239,6 @@ class ShopeeOrderTransformer:
             "region": recipient_address.get("region"),
             "zipcode": recipient_address.get("zipcode"),
             "full_address": recipient_address.get("full_address"),
-            "latitude": (
-                self._safe_float(
-                    recipient_address.get("geolocation", {}).get("latitude")
-                )
-                if recipient_address.get("geolocation")
-                else None
-            ),
-            "longitude": (
-                self._safe_float(
-                    recipient_address.get("geolocation", {}).get("longitude")
-                )
-                if recipient_address.get("geolocation")
-                else None
-            ),
         }
         address_list.append(address_data)
 
@@ -323,6 +287,7 @@ class ShopeeOrderTransformer:
                     if item.get("image_info")
                     else None
                 ),
+                "hot_listing_item": self._safe_bool(item.get("hot_listing_item")),
             }
             items_list.append(item_data)
 
@@ -372,8 +337,6 @@ class ShopeeOrderTransformer:
                     package.get("parcel_chargeable_weight_gram")
                 ),
                 "group_shipment_id": self._safe_int(package.get("group_shipment_id")),
-                "virtual_contact_number": package.get("virtual_contact_number"),
-                "package_query_number": package.get("package_query_number"),
                 "sorting_group": package.get("sorting_group"),
             }
             packages_list.append(package_data)
@@ -399,80 +362,6 @@ class ShopeeOrderTransformer:
                             pkg_item.get("parcel_chargeable_weight")
                         ),
                     }
-                )
-
-    def _process_invoice(self, order: Dict[str, Any], invoice_list: List):
-        """Xử lý bảng invoice"""
-        invoice_data_obj = order.get("invoice_data")
-        if not invoice_data_obj:
-            return
-
-        order_sn = order.get("order_sn")
-        invoice_data = {
-            "order_sn": order_sn,
-            "number": invoice_data_obj.get("number"),
-            "series_number": invoice_data_obj.get("series_number"),
-            "access_key": invoice_data_obj.get("access_key"),
-            "issue_date": self._unix_to_datetime(invoice_data_obj.get("issue_date")),
-            "total_value": self._safe_float(invoice_data_obj.get("total_value")),
-            "products_total_value": self._safe_float(
-                invoice_data_obj.get("products_total_value")
-            ),
-            "tax_code": invoice_data_obj.get("tax_code"),
-        }
-        invoice_list.append(invoice_data)
-
-    def _process_payment_info(self, order: Dict[str, Any], payment_info_list: List):
-        """Xử lý bảng payment_info"""
-        payment_info_array = order.get("payment_info", [])
-        if not payment_info_array or not isinstance(payment_info_array, list):
-            return
-
-        order_sn = order.get("order_sn")
-        for payment in payment_info_array:
-            payment_data = {
-                "order_sn": order_sn,
-                "transaction_id": payment.get("transaction_id"),
-                "payment_method": payment.get("payment_method"),
-                "payment_processor_register": payment.get("payment_processor_register"),
-                "card_brand": payment.get("card_brand"),
-            }
-            payment_info_list.append(payment_data)
-
-    def _process_array_tables(self, order: Dict[str, Any], dataframes: Dict[str, List]):
-        """Xử lý các bảng mảng đơn giản"""
-        order_sn = order.get("order_sn")
-
-        # Pending terms
-        pending_terms = order.get("pending_terms", [])
-        if pending_terms and isinstance(pending_terms, list):
-            for term in pending_terms:
-                dataframes["order_pending_terms"].append(
-                    {"order_sn": order_sn, "term": term}
-                )
-
-        # Warnings
-        warnings = order.get("warnings", [])
-        if warnings and isinstance(warnings, list):
-            for warning in warnings:
-                dataframes["order_warnings"].append(
-                    {"order_sn": order_sn, "warning": warning}
-                )
-
-        # Prescription images
-        prescription_images = order.get("prescription_images", [])
-        if prescription_images and isinstance(prescription_images, list):
-            for image_url in prescription_images:
-                dataframes["prescription_images"].append(
-                    {"order_sn": order_sn, "image_url": image_url}
-                )
-
-        # Buyer proof of collection
-        buyer_proof = order.get("buyer_proof_of_collection", [])
-        if buyer_proof and isinstance(buyer_proof, list):
-            for image_url in buyer_proof:
-                dataframes["buyer_proof_of_collection"].append(
-                    {"order_sn": order_sn, "image_url": image_url}
                 )
 
     def transform_orders_to_flat_dataframe(
@@ -543,16 +432,6 @@ class ShopeeOrderTransformer:
                 "order_chargeable_weight_gram": self._safe_int(
                     order.get("order_chargeable_weight_gram")
                 ),
-                "prescription_check_status": self._safe_int(
-                    order.get("prescription_check_status")
-                ),
-                "pharmacist_name": order.get("pharmacist_name"),
-                "prescription_approval_time": self._unix_to_datetime(
-                    order.get("prescription_approval_time")
-                ),
-                "prescription_rejection_time": self._unix_to_datetime(
-                    order.get("prescription_rejection_time")
-                ),
                 "edt_from": self._unix_to_datetime(order.get("edt_from")),
                 "edt_to": self._unix_to_datetime(order.get("edt_to")),
                 "booking_sn": order.get("booking_sn"),
@@ -579,22 +458,6 @@ class ShopeeOrderTransformer:
                         "recipient_region": recipient_address.get("region"),
                         "recipient_zipcode": recipient_address.get("zipcode"),
                         "recipient_full_address": recipient_address.get("full_address"),
-                        "recipient_latitude": (
-                            self._safe_float(
-                                recipient_address.get("geolocation", {}).get("latitude")
-                            )
-                            if recipient_address.get("geolocation")
-                            else None
-                        ),
-                        "recipient_longitude": (
-                            self._safe_float(
-                                recipient_address.get("geolocation", {}).get(
-                                    "longitude"
-                                )
-                            )
-                            if recipient_address.get("geolocation")
-                            else None
-                        ),
                     }
                 )
 
