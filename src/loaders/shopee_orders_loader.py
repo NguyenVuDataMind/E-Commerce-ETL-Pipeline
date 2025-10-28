@@ -117,7 +117,7 @@ class ShopeeOrderLoader:
             if str(s.dtype).startswith("datetime64"):
                 continue
 
-            # Trường hợp numeric (epoch giây/ms)
+            # Trường hợp numeric (epoch giây/ms) → GIỮ UTC tz-aware, KHÔNG đổi +07 ở đây
             if pd.api.types.is_numeric_dtype(s):
                 s_float = s.astype("float64")
                 # Heuristic: >1e12 => ms, >1e9 => s
@@ -127,23 +127,15 @@ class ShopeeOrderLoader:
                     dt = pd.to_datetime(s_float, unit="s", errors="coerce", utc=True)
                 else:
                     dt = pd.to_datetime(s_float, unit="s", errors="coerce", utc=True)
-                df_norm[col] = (
-                    dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
-                    if dt.dt.tz is not None
-                    else dt
-                )
+                df_norm[col] = dt
                 continue
 
-            # Trường hợp string ISO hoặc chuỗi khác
+            # Trường hợp string ISO hoặc chuỗi khác → GIỮ UTC tz-aware, KHÔNG đổi +07 ở đây
             if pd.api.types.is_string_dtype(s):
                 # Thử parse ISO; pandas hỗ trợ hậu tố Z nếu utc=True
                 dt = pd.to_datetime(s, errors="coerce", utc=True)
                 if dt.notna().any():
-                    df_norm[col] = (
-                        dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
-                        if dt.dt.tz is not None
-                        else dt
-                    )
+                    df_norm[col] = dt
 
         return df_norm
 
