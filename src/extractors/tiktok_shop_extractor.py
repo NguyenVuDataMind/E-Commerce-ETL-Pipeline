@@ -37,7 +37,6 @@ class TikTokShopOrderExtractor:
 
     def __init__(self):
         self.auth = TikTokAuthenticator()
-        self.base_url = "https://open-api.tiktokglobalshop.com"
         self.logger = logger  # Add logger reference
 
     def stream_orders_lightweight(
@@ -296,6 +295,69 @@ class TikTokShopOrderExtractor:
                 "Không thể thực hiện request - có thể do lỗi token hoặc kết nối database"
             )
 
+    def _search_orders_full_by_update(
+        self, start_time: int, end_time: int, page_size: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Trả về FULL orders trực tiếp từ /orders/search, lọc theo update_time."""
+        try:
+            if not self.auth.ensure_valid_token():
+                raise RuntimeError("Cannot authenticate with TikTok Shop API")
+
+            orders_all: List[Dict[str, Any]] = []
+            cursor = ""
+
+            while True:
+                params = {
+                    "app_key": self.auth.app_key,
+                    "timestamp": str(int(time.time())),
+                    "shop_cipher": self.auth.shop_cipher,
+                    "sign_method": "hmac_sha256",
+                    "page_size": page_size,
+                    "sort_order": "DESC",
+                    "sort_field": "update_time",
+                }
+                if cursor:
+                    params["cursor"] = cursor
+
+                body = {
+                    "update_time_ge": start_time,
+                    "update_time_lt": end_time,
+                }
+                body_string = json.dumps(body, separators=(",", ":"), sort_keys=True)
+                params["sign"] = self.auth.generate_signature(
+                    "/order/202309/orders/search", params, body_string
+                )
+
+                headers = {
+                    "x-tts-access-token": self.auth.access_token,
+                    "Content-Type": "application/json",
+                }
+                url = f"{self.auth.base_api_url}/order/202309/orders/search"
+
+                resp = requests.post(
+                    url, params=params, data=body_string, headers=headers, timeout=30
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("code") != 0:
+                    raise RuntimeError(f"API Error: {data.get('message')}")
+
+                batch = data.get("data", {}).get("orders", []) or []
+                if batch:
+                    orders_all.extend(batch)
+
+                more = data.get("data", {}).get("more", False)
+                cursor = data.get("data", {}).get("next_cursor", "")
+                if not (more and cursor):
+                    break
+
+                time.sleep(0.4)
+
+            return orders_all
+        except Exception as e:
+            self.logger.error(f"Error in _search_orders_full_by_update: {e}")
+            raise
+
     def get_order_details_with_ids(self, order_ids: List[str]) -> List[Dict[str, Any]]:
         """
         Get order details theo pattern từ notebook - sử dụng GET request với order_id_list
@@ -395,95 +457,7 @@ class TikTokShopOrderExtractor:
                 "Không thể thực hiện request - có thể do lỗi token hoặc kết nối database"
             )
 
-    def extract_orders_for_period(
-        self, start_date: datetime, end_date: datetime, batch_size: int = 20
-    ) -> List[Dict[str, Any]]:
-        """
-        Extract all orders for a specific time period với memory optimization
-
-        Args:
-            start_date: Start date
-            end_date: End date
-            batch_size: Số orders xử lý mỗi batch để tránh OOM
-
-        Returns:
-            List of order dictionaries
-        """
-        try:
-            # Convert to timestamps
-            start_timestamp = int(start_date.timestamp())
-            end_timestamp = int(end_date.timestamp())
-
-            self.logger.info(f"Extracting orders from {start_date} to {end_date}")
-
-            # Step 1: Search for order IDs với pagination
-            order_ids = self.search_orders_for_ids(start_timestamp, end_timestamp)
-
-            if not order_ids:
-                self.logger.warning("No order IDs found for the specified period")
-                return []
-
-            self.logger.info(
-                f"Found {len(order_ids)} order IDs. Processing in batches of {batch_size}"
-            )
-
-            # Step 2: Process orders in batches để tránh OOM
-            all_orders = []
-            total_batches = (len(order_ids) + batch_size - 1) // batch_size
-
-            for i in range(0, len(order_ids), batch_size):
-                batch_num = (i // batch_size) + 1
-                batch_order_ids = order_ids[i : i + batch_size]
-
-                self.logger.info(
-                    f"Processing batch {batch_num}/{total_batches}: {len(batch_order_ids)} orders"
-                )
-
-                try:
-                    # Get detailed order information cho batch này
-                    batch_orders = self.get_order_details_with_ids(batch_order_ids)
-                    all_orders.extend(batch_orders)
-
-                    self.logger.info(
-                        f"Batch {batch_num} completed. Total orders so far: {len(all_orders)}"
-                    )
-
-                    # Memory cleanup sau mỗi batch
-                    del batch_orders
-                    import gc
-
-                    gc.collect()
-
-                    # Rate limiting giữa các batches
-                    if batch_num < total_batches:
-                        time.sleep(1)  # 1 second delay giữa batches
-
-                except Exception as e:
-                    self.logger.error(f"Error processing batch {batch_num}: {str(e)}")
-                    # Continue với batch tiếp theo thay vì fail toàn bộ
-                    continue
-
-            self.logger.info(f"Successfully extracted {len(all_orders)} orders")
-            return all_orders
-
-        except Exception as e:
-            self.logger.error(f"Exception in extract_orders_for_period: {str(e)}")
-            raise
-
-    def extract_recent_orders(self, days_back: int = 1) -> List[Dict[str, Any]]:
-        """
-        Extract orders from recent days
-
-        Args:
-            days_back: Number of days to look back
-
-        Returns:
-            List of order dictionaries
-        """
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_back)
-
-        return self.extract_orders_for_period(start_date, end_date)
+    # Dọn dẹp: loại bỏ các hàm không được DAGs sử dụng để tránh rối code
 
     def extract_incremental_orders(
         self, minutes_back: int = 10
@@ -505,23 +479,13 @@ class TikTokShopOrderExtractor:
                 f"Extracting incremental orders from {start_time.strftime('%Y-%m-%d %H:%M')} to {end_time.strftime('%Y-%m-%d %H:%M')}"
             )
 
-            # Use update_time instead of create_time for incremental
+            # Lấy theo update_time và trả FULL orders trực tiếp từ search (không GET theo id)
             start_timestamp = int(start_time.timestamp())
             end_timestamp = int(end_time.timestamp())
 
-            # Get order IDs first (truyền tham số vị trí theo chữ ký hàm)
-            order_ids = self.search_orders_for_ids(
-                start_timestamp,
-                end_timestamp,
-                page_size=50,  # Batch nhỏ cho cửa sổ incremental ngắn
+            orders = self._search_orders_full_by_update(
+                start_timestamp, end_timestamp, page_size=50
             )
-
-            if not order_ids:
-                self.logger.info("No new/updated orders found in incremental window")
-                return []
-
-            # Extract full details
-            orders = self.get_order_details_with_ids(order_ids)
 
             self.logger.info(f"Extracted {len(orders)} orders for incremental update")
             return orders
@@ -575,80 +539,3 @@ class TikTokShopOrderExtractor:
         fixed_date = datetime(2024, 7, 1)
         logger.info(f"Using fixed start date: {fixed_date.strftime('%Y-%m-%d')}")
         return fixed_date
-
-    def stream_orders_lightweight(
-        self, start_time: int, end_time: int, batch_size: int = 20
-    ) -> Any:
-        """
-        Stream orders trong batches nhỏ để ETL real-time
-        Tránh load hết memory và infinite loop
-
-        Args:
-            start_time: Unix timestamp bắt đầu
-            end_time: Unix timestamp kết thúc
-            batch_size: Số orders per batch
-
-        Yields:
-            Batches of order details
-        """
-        try:
-            self.logger.info(
-                f"🚀 Starting lightweight streaming from {start_time} to {end_time}"
-            )
-            self.logger.info(f"📦 Batch size: {batch_size}")
-
-            # Phase 1: Get all order IDs first
-            self.logger.info("📋 Phase 1: Getting all order IDs...")
-            order_ids = self.search_orders_for_ids(
-                start_time, end_time, page_size=100
-            )  # Sử dụng page_size=100 để tối ưu hiệu suất
-
-            if not order_ids:
-                self.logger.warning("⚠️ No orders found in the specified time range")
-                return
-
-            total_orders = len(order_ids)
-            self.logger.info(f"📊 Found {total_orders} orders total")
-
-            # Phase 2: Stream order details in small batches
-            self.logger.info("📦 Phase 2: Streaming order details...")
-            for i in range(0, total_orders, batch_size):
-                batch_ids = order_ids[i : i + batch_size]
-                batch_number = (i // batch_size) + 1
-                total_batches = (total_orders + batch_size - 1) // batch_size
-
-                self.logger.info(
-                    f"🔄 Processing batch {batch_number}/{total_batches} ({len(batch_ids)} orders)"
-                )
-
-                try:
-                    # Get detailed order data for this batch
-                    batch_orders = self.get_order_details_with_ids(batch_ids)
-
-                    if batch_orders:
-                        self.logger.info(
-                            f"✅ Successfully extracted {len(batch_orders)} orders in batch {batch_number}"
-                        )
-                        yield batch_orders
-                    else:
-                        self.logger.warning(
-                            f"⚠️ No orders returned for batch {batch_number}"
-                        )
-
-                except Exception as batch_error:
-                    self.logger.error(
-                        f"❌ Error processing batch {batch_number}: {str(batch_error)}"
-                    )
-                    # Continue with next batch instead of failing entire stream
-                    continue
-
-                # Small delay between batches để tránh rate limiting
-                time.sleep(0.3)
-
-            self.logger.info(
-                f"✅ Streaming completed - processed {total_orders} orders"
-            )
-
-        except Exception as e:
-            self.logger.error(f"❌ Critical error in streaming: {str(e)}")
-            raise

@@ -107,24 +107,11 @@ def transform_tiktok_shop_incremental(**context):
 
         logger.info(f"✅ Transformed {len(transformed_df)} incremental records")
 
-        # Convert DataFrame to dict for XCom
-        # FIXED: Convert Timestamp columns to string để tránh JSON serialization error
-        transformed_df_clean = transformed_df.copy()
-
-        # Convert all datetime/timestamp columns to string để JSON serializable
-        # FIXED: Convert TẤT CẢ datetime columns thành string để tránh XCom serialization error
-        for col in transformed_df_clean.columns:
-            if pd.api.types.is_datetime64_any_dtype(transformed_df_clean[col]):
-                # Convert TẤT CẢ datetime columns thành string (như Shopee)
-                transformed_df_clean[col] = transformed_df_clean[col].dt.strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-
-        # Replace NaN values with None to make it JSON serializable
-        transformed_df_clean = transformed_df_clean.where(
-            pd.notnull(transformed_df_clean), None
+        # Serialize DataFrame sang JSON-safe theo ISO 8601 (giữ NaT an toàn)
+        payload_json = transformed_df.to_json(
+            orient="records", date_format="iso", date_unit="s"
         )
-        transformed_data = transformed_df_clean.to_dict("records")
+        transformed_data = json.loads(payload_json)
         context["ti"].xcom_push(
             key="tiktok_shop_incremental_transformed", value=transformed_data
         )

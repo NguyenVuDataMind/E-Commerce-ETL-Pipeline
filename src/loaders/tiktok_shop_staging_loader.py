@@ -231,14 +231,26 @@ class TikTokShopOrderLoader:
                         dt = dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
                         prepared[col] = dt
                     else:
-                        # Cột là epoch integer → convert như cũ
-                        s = pd.to_numeric(prepared[col], errors="coerce")
-                        # Nếu giá trị ms (>=1e12) -> quy về giây
-                        s = s.where(s.isna() | (s < 10**12), (s // 1000))
-                        # Convert về datetime +07-naive (DATETIME2)
-                        dt = pd.to_datetime(s, unit="s", utc=True, errors="coerce")
-                        dt = dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
-                        prepared[col] = dt.where(pd.notna(dt), None)
+                        # Nếu là chuỗi ISO/strftime → parse về UTC rồi convert +07
+                        if pd.api.types.is_string_dtype(prepared[col]):
+                            dt = pd.to_datetime(
+                                prepared[col], utc=True, errors="coerce"
+                            )
+                            dt = dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(
+                                None
+                            )
+                            prepared[col] = dt.where(pd.notna(dt), None)
+                        else:
+                            # Cột là epoch integer → convert như cũ
+                            s = pd.to_numeric(prepared[col], errors="coerce")
+                            # Nếu giá trị ms (>=1e12) -> quy về giây
+                            s = s.where(s.isna() | (s < 10**12), (s // 1000))
+                            # Convert về datetime +07-naive (DATETIME2)
+                            dt = pd.to_datetime(s, unit="s", utc=True, errors="coerce")
+                            dt = dt.dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(
+                                None
+                            )
+                            prepared[col] = dt.where(pd.notna(dt), None)
 
             # 2) Chuẩn hóa nhóm tiền/tổng (DECIMAL(18,2) phía DB)
             money_cols = [
