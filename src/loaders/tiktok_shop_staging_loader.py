@@ -423,7 +423,7 @@ class TikTokShopOrderLoader:
             insert_values_sql = ", ".join([f"source.{c}" for c in columns])
 
             # Chia lô để tránh câu lệnh quá dài
-            batch_size = min(200, len(df)) if len(df) > 0 else 0
+            batch_size = min(20, len(df)) if len(df) > 0 else 0
 
             with self.db.engine.begin() as conn:
                 total_rows = 0
