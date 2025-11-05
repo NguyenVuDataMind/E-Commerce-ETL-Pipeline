@@ -44,8 +44,12 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install --only-binary=:all: --prefer-binary --no-binary=python-nvd3 -r requirements.txt
-        pip install --only-binary=:all: --prefer-binary pytest pytest-cov flake8 black
+        # Cài riêng google-re2 bằng wheel nếu có; nếu không có wheel thì bỏ qua
+        pip install --only-binary=:all: google-re2 || true
+        # Cài dependencies dự án (cho phép build từ source nếu cần)
+        pip install -r requirements.txt
+        # Công cụ kiểm thử và lint
+        pip install pytest pytest-cov flake8 black
         
     - name: Code formatting check với Black
       run: |
