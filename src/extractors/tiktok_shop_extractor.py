@@ -300,44 +300,38 @@ class TikTokShopOrderExtractor:
     ) -> List[Dict[str, Any]]:
         """Trả về FULL orders trực tiếp từ /orders/search, lọc theo update_time."""
         try:
-            if not self.auth.ensure_valid_token():
-                raise RuntimeError("Cannot authenticate with TikTok Shop API")
-
+            # Không cần ensure_valid_token ở đây vì make_authenticated_request tự xử lý 401 + refresh
             orders_all: List[Dict[str, Any]] = []
             cursor = ""
 
             while True:
-                params = {
-                    "app_key": self.auth.app_key,
-                    "timestamp": str(int(time.time())),
-                    "shop_cipher": self.auth.shop_cipher,
-                    "sign_method": "hmac_sha256",
-                    "page_size": page_size,
-                    "sort_order": "DESC",
-                    "sort_field": "update_time",
-                }
-                if cursor:
-                    params["cursor"] = cursor
-
+                # Body filter theo update_time
                 body = {
                     "update_time_ge": start_time,
                     "update_time_lt": end_time,
                 }
                 body_string = json.dumps(body, separators=(",", ":"), sort_keys=True)
-                params["sign"] = self.auth.generate_signature(
-                    "/order/202309/orders/search", params, body_string
-                )
 
-                headers = {
-                    "x-tts-access-token": self.auth.access_token,
-                    "Content-Type": "application/json",
+                # Chỉ truyền các tham số business; phần chữ ký & tham số hệ thống sẽ do make_authenticated_request thêm
+                base_params: Dict[str, Any] = {
+                    "page_size": page_size,
+                    "sort_order": "DESC",
+                    "sort_field": "update_time",
                 }
-                url = f"{self.auth.base_api_url}/order/202309/orders/search"
+                if cursor:
+                    base_params["cursor"] = cursor
 
-                resp = requests.post(
-                    url, params=params, data=body_string, headers=headers, timeout=30
+                # Gọi thông qua lớp xác thực để tự động refresh token + re-sign khi 401
+                resp = self.auth.make_authenticated_request(
+                    method="POST",
+                    endpoint="/order/202309/orders/search",
+                    params=base_params,
+                    body=body_string,
                 )
-                resp.raise_for_status()
+
+                if resp is None:
+                    raise RuntimeError("Failed to get response from TikTok Shop API")
+
                 data = resp.json()
                 if data.get("code") != 0:
                     raise RuntimeError(f"API Error: {data.get('message')}")
