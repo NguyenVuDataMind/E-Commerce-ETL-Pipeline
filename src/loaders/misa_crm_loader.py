@@ -862,9 +862,10 @@ class MISACRMLoader:
           ON tgt.order_id = src.order_id AND tgt.item_id = src.item_id
         """
 
-        with self.db_engine.connect() as conn:
+        # SỬA: Dùng begin() thay vì connect() + commit() để tương thích với SQLAlchemy 2.0
+        with self.db_engine.begin() as conn:
             conn.execute(text(sql))
-            conn.commit()
+            # Tự động commit khi context kết thúc
 
     def _normalize_by_schema_types(
         self, df: pd.DataFrame, column_types: Dict[str, str]
@@ -1181,7 +1182,8 @@ class MISACRMLoader:
 
         for endpoint, table_full_name in self.table_mappings.items():
             try:
-                with self.db_engine.connect() as conn:
+                # SỬA: Dùng begin() thay vì connect() + commit() để tương thích với SQLAlchemy 2.0
+                with self.db_engine.begin() as conn:
                     # Delete old data
                     result = conn.execute(
                         text(
@@ -1194,8 +1196,7 @@ class MISACRMLoader:
 
                     deleted_count = result.rowcount
                     deleted_counts[endpoint] = deleted_count
-
-                    conn.commit()
+                    # Tự động commit khi context kết thúc
 
                     if deleted_count > 0:
                         logger.info(f"🗑️ {endpoint}: Đã xóa {deleted_count} records cũ")
