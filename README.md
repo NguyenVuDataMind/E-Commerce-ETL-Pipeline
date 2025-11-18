@@ -2,6 +2,10 @@
 
 Hệ thống ETL tập trung dữ liệu từ TikTok Shop, MISA CRM và Shopee vào SQL Server Data Warehouse.
 
+## Kiến Trúc
+
+![Kiến trúc hệ thống ETL](docs/images/hethong.png)
+
 ## Tính Năng
 
 - **Full Load ETL**: Lấy toàn bộ dữ liệu historical từ 3 platforms
@@ -49,11 +53,6 @@ shopee_orders (order_sn PK)
 └── shopee_packages (order_sn, package_number PK)
     └── shopee_package_items (order_sn, package_number, order_item_id, model_id PK)
 ```
-
-## Kiến Trúc
-
-![Kiến trúc hệ thống ETL](docs/images/hethong.png)
-
 
 ## Cài Đặt & Triển Khai
 
