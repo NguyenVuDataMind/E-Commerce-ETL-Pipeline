@@ -83,9 +83,9 @@ jobs:
             from src.loaders.misa_crm_loader import MISACRMLoader
             from src.loaders.tiktok_shop_staging_loader import TikTokShopOrderLoader
             from src.loaders.shopee_orders_loader import ShopeeOrderLoader
-            print('✅ Tất cả modules import thành công')
+            print('Tất cả modules import thành công')
         except ImportError as e:
-            print(f'❌ Lỗi import: {e}')
+            print(f'Lỗi import: {e}')
             sys.exit(1)
         "
         
@@ -105,16 +105,16 @@ jobs:
             with open('dags/full_load_etl_dag.py', 'r', encoding='utf-8') as f:
                 dag_code = f.read()
             exec(dag_code)
-            print('✅ full_load_etl_dag validation thành công')
+            print('full_load_etl_dag validation thành công')
             
             # Test incremental_etl_dag  
             with open('dags/incremental_etl_dag.py', 'r', encoding='utf-8') as f:
                 dag_code = f.read()
             exec(dag_code)
-            print('✅ incremental_etl_dag validation thành công')
+            print('incremental_etl_dag validation thành công')
             
         except Exception as e:
-            print(f'❌ Lỗi validation DAG: {e}')
+            print(f'Lỗi validation DAG: {e}')
             import traceback
             traceback.print_exc()
             sys.exit(1)
@@ -126,9 +126,9 @@ jobs:
         python -c "
         try:
             from config.settings import settings
-            print('✅ Settings import thành công')
+            print('Settings import thành công')
         except Exception as e:
-            print(f'❌ Lỗi settings: {e}')
+            print(f'Lỗi settings: {e}')
             sys.exit(1)
         "
         
@@ -148,7 +148,7 @@ jobs:
         
         try:
             # Test SQL Server connection
-            print('🔍 Testing SQL Server connection...')
+            print('Testing SQL Server connection...')
             from src.utils.database import DatabaseManager
             
             # Test connection string format
@@ -156,32 +156,32 @@ jobs:
             connection_string = db_manager.get_connection_string()
             
             if connection_string:
-                print('✅ SQL Server connection string được tạo thành công')
+                print('SQL Server connection string được tạo thành công')
                 print(f'Connection string format: {connection_string[:50]}...')
             else:
-                print('⚠️ SQL Server connection string không được tạo')
+                print('SQL Server connection string không được tạo')
             
             # Test loaders
-            print('🔍 Testing database loaders...')
+            print('Testing database loaders...')
             from src.loaders.misa_crm_loader import MISACRMLoader
             from src.loaders.tiktok_shop_staging_loader import TikTokShopOrderLoader
             from src.loaders.shopee_orders_loader import ShopeeOrderLoader
             
             # Test MISA CRM loader
             misa_loader = MISACRMLoader()
-            print(f'✅ MISA CRM loader table mappings: {misa_loader.table_mappings}')
+            print(f'MISA CRM loader table mappings: {misa_loader.table_mappings}')
             
             # Test TikTok Shop loader
             tiktok_loader = TikTokShopOrderLoader()
-            print('✅ TikTok Shop loader instantiated successfully')
+            print('TikTok Shop loader instantiated successfully')
             
             # Test Shopee loader
             shopee_loader = ShopeeOrderLoader()
-            print('✅ Shopee loader instantiated successfully')
+            print('Shopee loader instantiated successfully')
                 
         except Exception as e:
-            print(f'⚠️ Database connection test failed: {str(e)}')
-            print('⚠️ Có thể do chưa cấu hình database credentials')
+            print(f'Database connection test failed: {str(e)}')
+            print('Có thể do chưa cấu hình database credentials')
         "
         
     - name: Test data transformation logic
@@ -197,7 +197,7 @@ jobs:
         
         try:
             # Test MISA CRM transformer với sample data
-            print('🔍 Testing MISA CRM transformer...')
+            print('Testing MISA CRM transformer...')
             from src.transformers.misa_crm_transformer import MISACRMTransformer
             
             transformer = MISACRMTransformer()
@@ -211,14 +211,14 @@ jobs:
             try:
                 transformed_data = transformer.transform_all_endpoints(sample_data)
                 if transformed_data and len(transformed_data) > 0:
-                    print('✅ MISA CRM transformer hoạt động với sample data')
+                    print('MISA CRM transformer hoạt động với sample data')
                 else:
-                    print('⚠️ MISA CRM transformer không trả về dữ liệu')
+                    print('MISA CRM transformer không trả về dữ liệu')
             except Exception as e:
-                print(f'⚠️ MISA CRM transformer failed: {str(e)}')
+                print(f'MISA CRM transformer failed: {str(e)}')
             
             # Test TikTok Shop transformer với sample data
-            print('🔍 Testing TikTok Shop transformer...')
+            print('Testing TikTok Shop transformer...')
             from src.transformers.tiktok_shop_transformer import TikTokShopOrderTransformer
             
             tiktok_transformer = TikTokShopOrderTransformer()
@@ -234,15 +234,15 @@ jobs:
             try:
                 transformed_df = tiktok_transformer.transform_orders_to_dataframe(sample_orders)
                 if not transformed_df.empty:
-                    print('✅ TikTok Shop transformer hoạt động với sample data')
+                    print('TikTok Shop transformer hoạt động với sample data')
                     print(f'Sample transformed data shape: {transformed_df.shape}')
                 else:
-                    print('⚠️ TikTok Shop transformer không trả về dữ liệu')
+                    print('TikTok Shop transformer không trả về dữ liệu')
             except Exception as e:
-                print(f'⚠️ TikTok Shop transformer failed: {str(e)}')
+                print(f'TikTok Shop transformer failed: {str(e)}')
                 
         except Exception as e:
-            print(f'❌ Lỗi test data transformation: {e}')
+            print(f'Lỗi test data transformation: {e}')
             import traceback
             traceback.print_exc()
         "
@@ -259,18 +259,18 @@ jobs:
         
         try:
             # Test TikTok Shop authenticator
-            print('🔍 Testing TikTok Shop authenticator...')
+            print('Testing TikTok Shop authenticator...')
             from src.utils.auth import TikTokAuthenticator
             
             authenticator = TikTokAuthenticator()
             
             # Test token expiry check
             is_expired = authenticator.is_token_expired()
-            print(f'✅ Token expiry check: {\"Expired\" if is_expired else \"Valid\"}')
+            print(f'Token expiry check: {\"Expired\" if is_expired else \"Valid\"}')
             
             # Test refresh token expiry check
             is_refresh_expired = authenticator.is_refresh_token_expired()
-            print(f'✅ Refresh token expiry check: {\"Expired\" if is_refresh_expired else \"Valid\"}')
+            print(f'Refresh token expiry check: {\"Expired\" if is_refresh_expired else \"Valid\"}')
             
             # Test signature generation
             try:
@@ -281,21 +281,21 @@ jobs:
                 }
                 signature = authenticator.generate_signature('/test/endpoint', test_params)
                 if signature:
-                    print('✅ Signature generation successful')
+                    print('Signature generation successful')
                 else:
-                    print('⚠️ Signature generation failed')
+                    print('Signature generation failed')
             except Exception as e:
-                print(f'⚠️ Signature generation test failed: {str(e)}')
+                print(f'Signature generation test failed: {str(e)}')
             
             # Test ensure_valid_token method
             try:
                 is_valid = authenticator.ensure_valid_token()
-                print(f'✅ Token validation: {\"Valid\" if is_valid else \"Invalid\"}')
+                print(f'Token validation: {\"Valid\" if is_valid else \"Invalid\"}')
             except Exception as e:
-                print(f'⚠️ Token validation test failed: {str(e)}')
+                print(f'Token validation test failed: {str(e)}')
                 
         except Exception as e:
-            print(f'❌ Lỗi test token refresh: {e}')
+            print(f'Lỗi test token refresh: {e}')
             import traceback
             traceback.print_exc()
         "
@@ -325,14 +325,16 @@ jobs:
         
         # Sửa đường dẫn cho Docker container
         sys.path.append('/opt/airflow/')
-        print('✅ Docker image test thành công')
+        print('Docker image test thành công')
         "
 
   # Job 3: Deploy to Ubuntu VM
+  # DISABLED: Deploy job đã được tắt để tránh xung đột với VPS cũ
+  # Nếu muốn bật lại, thay đổi điều kiện if: false thành if: github.ref == 'refs/heads/main'
   deploy-to-vm:
     needs: [test-dags, build-docker]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: false  # DISABLED - Không deploy tự động
     
     steps:
     - name: Checkout code
@@ -497,19 +499,20 @@ jobs:
         rm -f ~/.ssh/id_rsa
 
   # Job 4: Notification
-  notify:
-    needs: [deploy-to-vm]
-    runs-on: ubuntu-latest
-    if: always()
-    
-    steps:
-    - name: Notify deployment status
-      run: |
-        if [ "${{ needs.deploy-to-vm.result }}" == "success" ]; then
-          echo "✅ Deployment thành công!"
-          echo "ETL Pipeline đã được deploy lên VM Ubuntu"
-          echo "Airflow Webserver: http://${{ env.VM_HOST }}:8080"
-        else
-          echo "❌ Deployment thất bại!"
-          echo "Vui lòng kiểm tra logs để xem lỗi"
-        fi
+  # DISABLED: Notification job đã được tắt vì deploy job đã bị disable
+  # notify:
+  #   needs: [deploy-to-vm]
+  #   runs-on: ubuntu-latest
+  #   if: always()
+  #   
+  #   steps:
+  #   - name: Notify deployment status
+  #     run: |
+  #       if [ "${{ needs.deploy-to-vm.result }}" == "success" ]; then
+  #         echo "Deployment thành công!"
+  #         echo "ETL Pipeline đã được deploy lên VM Ubuntu"
+  #         echo "Airflow Webserver: http://${{ env.VM_HOST }}:8080"
+  #       else
+  #         echo "Deployment thất bại!"
+  #         echo "Vui lòng kiểm tra logs để xem lỗi"
+  #       fi
