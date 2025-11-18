@@ -84,8 +84,8 @@ docker-compose logs -f airflow-webserver
 ### 3. Truy Cập Dashboard
 
 - **Airflow Web UI**: http://localhost:8080
-  - Username: `admin`
-  - Password: `facolos2024` (mặc định, có thể thay đổi trong docker-compose.yml)
+  - Username: 
+  - Password: 
 - **Database**: SQL Server trên port 1433 (development connection)
 
 ![Airflow Dashboard](docs/images/airflow.png)
