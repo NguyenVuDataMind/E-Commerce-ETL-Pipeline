@@ -56,3 +56,7 @@ unittests.cfg
 # Docker
 .dockerignore
 
+# Internal docs and SQL assets (avoid publishing sensitive data)
+docs/
+sql/
+*.ipynb

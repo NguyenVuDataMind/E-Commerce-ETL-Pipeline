@@ -1,9 +1,9 @@
 services:
-  # SQL Server Database - Facolos Enterprise Data Warehouse
+  # SQL Server Database - Staging Data Warehouse
   sqlserver:
     build:
       context: ./sql
-    container_name: facolos_enterprise_sqlserver
+    container_name: etl_sqlserver
     environment:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=${SQL_SERVER_PASSWORD}
@@ -15,14 +15,14 @@ services:
       - sqlserver_data:/var/opt/mssql
 
     networks:
-      - facolos_enterprise_network
+      - etl_network
     restart: unless-stopped
 
 
   # Apache Airflow - PostgreSQL (Airflow metadata)
   postgres:
     image: postgres:13
-    container_name: facolos_enterprise_postgres
+    container_name: etl_postgres
     environment:
       - POSTGRES_USER=airflow
       - POSTGRES_PASSWORD=airflow
@@ -30,25 +30,25 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - facolos_enterprise_network
+      - etl_network
     restart: unless-stopped
 
 
   # Redis (Airflow message broker)
   redis:
     image: redis:latest
-    container_name: facolos_enterprise_redis
+    container_name: etl_redis
     expose:
       - 6379
     networks:
-      - facolos_enterprise_network
+      - etl_network
     restart: unless-stopped
 
 
   # Airflow Webserver - Production Configuration
   airflow-webserver:
     build: .
-    container_name: facolos_enterprise_airflow_webserver
+    container_name: etl_airflow_webserver
     depends_on:
       - postgres
       - redis
@@ -64,7 +64,7 @@ services:
 
 
       # Custom Connections
-      - AIRFLOW_CONN_MSSQL_FACOLOS_DW=mssql://sa:${SQL_SERVER_PASSWORD}@sqlserver:1433/${SQL_SERVER_DATABASE}?driver=ODBC+Driver+17+for+SQL+Server&Encrypt=no
+      - AIRFLOW_CONN_MSSQL_DW=mssql://sa:${SQL_SERVER_PASSWORD}@sqlserver:1433/${SQL_SERVER_DATABASE}?driver=ODBC+Driver+17+for+SQL+Server&Encrypt=no
       # Production ETL Settings
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
@@ -84,14 +84,14 @@ services:
       - AIRFLOW__WEBSERVER__WORKER_LOG_SERVER_PORT=8793
       - AIRFLOW__LOGGING__BASE_LOG_FOLDER=/opt/airflow/logs
       # Recommended when behind proxies / stable URL
-      - AIRFLOW__WEBSERVER__BASE_URL=http://103.141.145.20:8080
+      - AIRFLOW__WEBSERVER__BASE_URL=${AIRFLOW_BASE_URL:-http://localhost:8080}
       - AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX=true
 
       # User Creation
       - _AIRFLOW_DB_UPGRADE=true
       - _AIRFLOW_WWW_USER_CREATE=true
       - _AIRFLOW_WWW_USER_USERNAME=${_AIRFLOW_WWW_USER_USERNAME:-admin}
-      - _AIRFLOW_WWW_USER_PASSWORD=${_AIRFLOW_WWW_USER_PASSWORD:-facolos2024}
+      - _AIRFLOW_WWW_USER_PASSWORD=${_AIRFLOW_WWW_USER_PASSWORD:-admin}
     env_file:
       - ./.env
     volumes:
@@ -110,13 +110,13 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - facolos_enterprise_network
+      - etl_network
     restart: unless-stopped
 
   # Airflow Scheduler - Production Configuration
   airflow-scheduler:
     build: .
-    container_name: facolos_enterprise_airflow_scheduler
+    container_name: etl_airflow_scheduler
     depends_on:
       - postgres
       - redis
@@ -131,7 +131,7 @@ services:
       - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY}
 
       # Custom Connections
-      - AIRFLOW_CONN_MSSQL_FACOLOS_DW=mssql://sa:${SQL_SERVER_PASSWORD}@sqlserver:1433/${SQL_SERVER_DATABASE}?driver=ODBC+Driver+17+for+SQL+Server&Encrypt=no
+      - AIRFLOW_CONN_MSSQL_DW=mssql://sa:${SQL_SERVER_PASSWORD}@sqlserver:1433/${SQL_SERVER_DATABASE}?driver=ODBC+Driver+17+for+SQL+Server&Encrypt=no
 
       # Production ETL Settings
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
@@ -161,13 +161,13 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - facolos_enterprise_network
+      - etl_network
     restart: unless-stopped
 
   # Airflow Worker - Production Configuration với Memory Optimization
   airflow-worker:
     build: .
-    container_name: facolos_enterprise_airflow_worker
+    container_name: etl_airflow_worker
     depends_on:
       - postgres
       - redis
@@ -185,7 +185,7 @@ services:
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
 
       # Custom Connections
-      - AIRFLOW_CONN_MSSQL_FACOLOS_DW=mssql://sa:${SQL_SERVER_PASSWORD}@sqlserver:1433/${SQL_SERVER_DATABASE}?driver=ODBC+Driver+17+for+SQL+Server&Encrypt=no
+      - AIRFLOW_CONN_MSSQL_DW=mssql://sa:${SQL_SERVER_PASSWORD}@sqlserver:1433/${SQL_SERVER_DATABASE}?driver=ODBC+Driver+17+for+SQL+Server&Encrypt=no
       - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
       - AIRFLOW__CELERY__BROKER_URL=redis://:@redis:6379/0
       - AIRFLOW__CORE__FERNET_KEY=YlCImzjge_TeZc6jGAjVLO8b5iWFm_3vNt0BY7r_Jsk=
@@ -208,7 +208,7 @@ services:
       - ./config:/opt/airflow/config
     command: celery worker
     networks:
-      - facolos_enterprise_network
+      - etl_network
     restart: unless-stopped
 
 volumes:
@@ -217,5 +217,5 @@ volumes:
   airflow_logs:
 
 networks:
-  facolos_enterprise_network:
+  etl_network:
     driver: bridge

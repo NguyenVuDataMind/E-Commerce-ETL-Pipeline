@@ -46,7 +46,10 @@ class ProductionConfig:
 
     # Email Alert Settings
     ENABLE_EMAIL_ALERTS = True
-    ALERT_EMAIL_RECIPIENTS = ["admin@facolos.com", "etl-team@facolos.com"]
+    ALERT_EMAIL_RECIPIENTS = [
+        os.getenv("ALERT_EMAIL_PRIMARY", "alerts@example.com"),
+        os.getenv("ALERT_EMAIL_SECONDARY", "data-team@example.com"),
+    ]
 
     # Slack Alert Settings (Optional)
     ENABLE_SLACK_ALERTS = False

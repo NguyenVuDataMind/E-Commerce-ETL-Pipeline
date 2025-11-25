@@ -17,7 +17,7 @@ class Settings:
         # ========================
         # ENTERPRISE SETTINGS
         # ========================
-        self.company_name: str = os.getenv("COMPANY_NAME", "Facolos")
+        self.company_name: str = os.getenv("COMPANY_NAME", "DemoCompany")
         self.environment: str = os.getenv(
             "ENVIRONMENT", "development"
         )  # development, staging, production
@@ -25,7 +25,7 @@ class Settings:
         # ========================
         # TIKTOK SHOP API CREDENTIALS
         # ========================
-        self.tiktok_shop_app_key: str = os.getenv("TIKTOK_APP_KEY", "6h2cosrovhjab")
+        self.tiktok_shop_app_key: str = os.getenv("TIKTOK_APP_KEY", "")
         self.tiktok_shop_app_secret: str = os.getenv("TIKTOK_APP_SECRET", "")
         self.tiktok_shop_access_token: str = os.getenv("TIKTOK_ACCESS_TOKEN", "")
         self.tiktok_shop_refresh_token: str = os.getenv("TIKTOK_REFRESH_TOKEN", "")
@@ -56,13 +56,9 @@ class Settings:
             "SQL_SERVER_HOST", "sqlserver"
         )  # Use the service name from docker-compose for container-to-container communication
         self.sql_server_port: int = int(os.getenv("SQL_SERVER_PORT", "1433"))
-        self.sql_server_database: str = os.getenv(
-            "SQL_SERVER_DATABASE", "Facolos_Staging"
-        )
-        self.sql_server_username: str = os.getenv("SQL_SERVER_USERNAME", "sa")
-        self.sql_server_password: str = os.getenv(
-            "SQL_SERVER_PASSWORD", "FacolosDB2024!"
-        )
+        self.sql_server_database: str = os.getenv("SQL_SERVER_DATABASE", "")
+        self.sql_server_username: str = os.getenv("SQL_SERVER_USERNAME", "")
+        self.sql_server_password: str = os.getenv("SQL_SERVER_PASSWORD", "")
         self.staging_schema: str = os.getenv("STAGING_SCHEMA", "staging")
 
         # ========================
